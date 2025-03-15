@@ -63,7 +63,7 @@ At the very start of the script, they include the fix for the conda stuff above.
 -   os.environ['LD_LIBRARY_PATH'] += ':' + newlib
 ``` 
 
-In the SBATCH part of the script we need to add the account (since we don't want to use up the IDI quota). Additionally, the CUDA version we are using doesn't support the Tesla P100-GPUs FOR WHATEVER REASON, so we need to add a GPU constraint. Add this:
+In the SBATCH part of the script we need to add the account (since we don't want to use up the IDI quota). Additionally, the CUDA version we are using doesn't support the Tesla P100-GPUs for some reason, so we need to add a GPU constraint. Add this:
 ```diff
 + #SBATCH --account=share-ie-idi
 + #SBATCH --constraint=(a100|h100)
@@ -71,7 +71,7 @@ In the SBATCH part of the script we need to add the account (since we don't want
 
 Update the parameter parser defaults to reflect your workflow, or just set them when you run the program, idc.
 
-Hint: make the default value of the epochs parameter a list, because else it is going to treat the name you specify as a list and you will get some weird errors when it creates a symlink like "file does not exist" even though the file verifiably *does* exist, it is just a broken symlink because it linked to a file "m.pth" when it should be "model_0030_0.pth" because that is the first index of the "list" that is actually string and you might legitimately and understandably go crazy.
+Hint: make the default value of the epochs parameter a list instead of a tuple, because else it is going to treat the name you specify as a string and you will get some weird errors when it creates a symlink like "file does not exist" even though the file verifiably *does* exist, it is just a broken symlink because it linked to a file "m.pth" when it should be "model_0030_0.pth" because that is the first index of the "list" that is actually string and you might legitimately and understandably go crazy.
 
 ```diff
 - default=("model_0030"),
@@ -79,8 +79,8 @@ Hint: make the default value of the epochs parameter a list, because else it is 
 ```
 
 
-
 ## Possible cleanups
 
 In `model.py`:
 1. Separate forward into two methods, and select in __init__ by which backbone is used to avoid the control flow. There is more control flow other places though.
+

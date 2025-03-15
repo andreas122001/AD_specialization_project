@@ -1,13 +1,13 @@
 #!/bin/bash
-#SBATCH --job-name=gen_server
+#SBATCH --job-name=gen_data
+#SBATCH --account=share-ie-idi
 #SBATCH --ntasks=1
 #SBATCH --nodes=1
-#SBATCH --time=3-00:00
-#SBATCH --gres=gpu:0
+#SBATCH --time=5-00:00:00
 #SBATCH --cpus-per-task=1
-#SBATCH --output=/mnt/lustre/work/geiger/bjaeger25/garage_2_cleanup/results/logs/gen_server_%a_%A.out
-#SBATCH --error=/mnt/lustre/work/geiger/bjaeger25/garage_2_cleanup/results/logs/gen_server_%a_%A.err
-#SBATCH --partition=2080-galvani
+#SBATCH --output=./gen_data_out.log
+#SBATCH --error=./gen_data_out.log
+#SBATCH --partition=CPUQ
 
 # print info about current job
 echo "START TIME: $(date)"
