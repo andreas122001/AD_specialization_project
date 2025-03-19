@@ -136,7 +136,7 @@ class TransfuserBackbone(nn.Module):
 
     return p3
 
-  def forward(self, image, lidar):
+  def forward(self, image: torch.Tensor, lidar: torch.Tensor) -> torch.Tensor:
     '''
         Image + LiDAR feature fusion using transformers
         Args:
