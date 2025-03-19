@@ -3,6 +3,7 @@ Code that loads the dataset for training.
 """
 
 import os
+from typing import Optional, Union
 import ujson
 import numpy as np
 from torch.utils.data import Dataset
@@ -20,6 +21,7 @@ from center_net import angle2class
 from imgaug import augmenters as ia
 import pickle
 import re
+from config import GlobalConfig
 
 
 class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
@@ -29,17 +31,18 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
 
     def __init__(
         self,
-        root,
-        config,
-        estimate_class_distributions=False,
-        estimate_sem_distribution=False,
-        shared_dict=None,
-        rank=0,
-        validation=False,
-    ):
+        root: Union[str, os.PathLike],
+        config: GlobalConfig,
+        estimate_class_distributions: bool = False,
+        estimate_sem_distribution: bool = False,
+        shared_dict: Optional[dict] = None,
+        rank: int = 0,
+        validation: bool = False,
+    ) -> None:
         self.config = config
         self.validation = validation
-        assert config.img_seq_len == 1
+        # TODO: implement image sequence
+        # assert config.img_seq_len == 1
 
         self.data_cache = shared_dict
         self.target_speed_bins = np.array(config.target_speed_bins)
@@ -88,50 +91,12 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
             for (
                 route
             ) in routes:  # loop over individual routes within this scenario folder
-                repetition = int(re.search("_Rep(\\d+)", route).group(1))
-                if repetition >= self.config.num_repetitions:
-                    continue
-
-                town = int(re.search("Town(\\d+)", route).group(1))
-                if self.validation and (town not in self.config.val_towns):
-                    continue
-                elif not self.validation and (town in self.config.val_towns):
-                    continue
-
-                route_dir = sub_root + "/" + route
                 total_routes += 1
-
-                if route.startswith("FAILED_") or not os.path.isfile(
-                    route_dir + "/results.json.gz"
-                ):
-                    skipped_routes += 1
-                    continue
-
-                # We skip data where the expert did not achieve perfect driving score (except for min speed infractions)
-                with gzip.open(
-                    route_dir + "/results.json.gz", "rt", encoding="utf-8"
-                ) as f:
-                    results_route = ujson.load(f)
-                condition1 = results_route["scores"]["score_composed"] < 100.0 and not (
-                    results_route["num_infractions"]
-                    == len(results_route["infractions"]["min_speed_infractions"])
-                )
-                condition2 = (
-                    results_route["status"] == "Failed - Agent couldn't be set up"
-                )
-                condition3 = results_route["status"] == "Failed"
-                condition4 = results_route["status"] == "Failed - Simulation crashed"
-                condition5 = results_route["status"] == "Failed - Agent crashed"
-                if condition1 or condition2 or condition3 or condition4 or condition5:
-                    continue
-
-                trainable_routes += 1
-
+                route_dir = sub_root + "/" + route
                 lidar_dir = route_dir + "/lidar"
-                if not os.path.exists(lidar_dir):
-                    skipped_routes += 1
-                    continue
-                num_seq = len(os.listdir(lidar_dir))
+                num_seq = len(
+                    os.listdir(lidar_dir)
+                )  # How many frames recorded for the current route
 
                 # If we are using checkpoints to predict the path, we can use all of the frames, otherwise we need to subtract
                 # pred_len so that we have enough waypoint labels
@@ -140,6 +105,26 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
                     - (self.config.seq_len - 1)
                     - (0 if not self.config.use_wp_gru else self.config.pred_len)
                 )
+
+                # Skip repetitions we are not using
+                repetition = int(re.search("_Rep(\\d+)", route).group(1))
+                if repetition >= self.config.num_repetitions:
+                    continue
+
+                # Skip if we are doing validation on a non-validation town and vice versa
+                town = int(re.search("Town(\\d+)", route).group(1))
+                if self.validation and (town not in self.config.val_towns):
+                    continue
+                elif not self.validation and (town in self.config.val_towns):
+                    continue
+
+                # We skip data where the expert did not achieve perfect driving score (except for min speed infractions)
+                if not self._is_valid_route(route_dir):
+                    skipped_routes += 1
+                    continue
+                trainable_routes += 1
+
+                # For all frames of the route (that we want to load)
                 for seq in range(config.skip_first, last_frame):
                     if seq % config.train_sampling_rate != 0:
                         continue
@@ -158,7 +143,7 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
                     future_box = []
                     measurement = []
 
-                    # Loads the current (and past) frames (if seq_len > 1)
+                    # Load sequence of frames (according to config.seq_len)
                     for idx in range(self.config.seq_len):
                         if not self.config.use_plant:
 
@@ -993,6 +978,29 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
 
         return data
 
+    def _is_valid_route(self, route_dir: Union[os.PathLike, str]) -> bool:
+        """
+        Returns True if the route meets the success conditions (perfect score, not failed, etc.)
+        """
+        if route_dir.split("/")[-1].startswith("FAILED_") or not os.path.isfile(
+            route_dir + "/results.json.gz"
+        ):
+            return False
+        lidar_dir = route_dir + "/lidar"
+        if not os.path.exists(lidar_dir):
+            return False
+        with gzip.open(route_dir + "/results.json.gz", "rt", encoding="utf-8") as f:
+            results_route = ujson.load(f)
+        condition1 = results_route["scores"]["score_composed"] < 100.0 and not (
+            results_route["num_infractions"]
+            == len(results_route["infractions"]["min_speed_infractions"])
+        )
+        condition2 = results_route["status"] == "Failed - Agent couldn't be set up"
+        condition3 = results_route["status"] == "Failed"
+        condition4 = results_route["status"] == "Failed - Simulation crashed"
+        condition5 = results_route["status"] == "Failed - Agent crashed"
+        return not (condition1 or condition2 or condition3 or condition4 or condition5)
+
     def get_targets(self, gt_bboxes, feat_h, feat_w):
         """
         Compute regression and classification targets in multiple images.
@@ -1614,3 +1622,21 @@ def lidar_augmenter(prob=0.2, cutout=False):
     augmenter = ia.Sequential(augmentations, random_order=True)
 
     return augmenter
+
+
+if __name__ == "__main__":
+    from config import GlobalConfig
+
+    config = GlobalConfig()
+    config.initialize(
+        root_dir=[
+            "/cluster/work/andrebw/repos/temporal_garage/results/data/garage_v2_2025_03_15/data"
+        ]
+    )
+    dataset = CARLA_Data(
+        root=config.data_roots,
+        config=config,
+        estimate_class_distributions=config.estimate_class_distributions,
+        estimate_sem_distribution=config.estimate_semantic_distribution,
+    )
+    print(dataset.__getitem__(5).keys())
