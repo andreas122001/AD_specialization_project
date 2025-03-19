@@ -187,7 +187,7 @@ def make_jobsub_file(
 #SBATCH --partition={partition_name}
 #SBATCH --account=share-ie-idi
 #SBATCH -o {data_save_root}/slurm/run_files/logs/qsub_out{route_file_number}.log
-#SBATCH -e {data_save_root}/slurm/run_files/logs/qsub_err{route_file_number}.log
+#SBATCH -e {data_save_root}/slurm/run_files/logs/qsub_out{route_file_number}.log
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=8
