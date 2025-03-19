@@ -47,7 +47,12 @@ class TransfuserBackbone(nn.Module):
             self.avgpool_lidar = nn.AdaptiveAvgPool3d(
                 (None, self.config.lidar_vert_anchors, self.config.lidar_horz_anchors)
             )
-            lidar_time_frames = [config.lidar_seq_len, 3, 2, 1]
+            lidar_time_frames = [
+                config.lidar_seq_len,
+                max(1, (config.lidar_seq_len + 1) // 2),
+                max(1, (config.lidar_seq_len + 3) // 4),
+                max(1, (config.lidar_seq_len + 7) // 8),
+            ]
 
         elif config.lidar_architecture == "video_swin_tiny":
             self.lidar_encoder = SwinTransformer3D(
@@ -59,7 +64,12 @@ class TransfuserBackbone(nn.Module):
             self.avgpool_lidar = nn.AdaptiveAvgPool3d(
                 (None, self.config.lidar_vert_anchors, self.config.lidar_horz_anchors)
             )
-            lidar_time_frames = [3, 3, 3, 3]
+            lidar_time_frames = [
+                (config.lidar_seq_len + 1) // 2,
+                (config.lidar_seq_len + 1) // 2,
+                (config.lidar_seq_len + 1) // 2,
+                (config.lidar_seq_len + 1) // 2,
+            ]
         else:
             self.lidar_encoder = timm.create_model(
                 config.lidar_architecture,
@@ -459,6 +469,8 @@ class GPT(nn.Module):
             lidar_tensor = (
                 lidar_tensor.permute(0, 2, 3, 1).contiguous().view(bz, -1, self.n_embd)
             )
+
+        print(self.lidar_time_frames, image_tensor.shape, lidar_tensor.shape, self.pos_emb.shape)
 
         token_embeddings = torch.cat((image_tensor, lidar_tensor), dim=1)
 
