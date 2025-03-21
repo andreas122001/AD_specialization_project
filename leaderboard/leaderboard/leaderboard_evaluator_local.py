@@ -307,6 +307,8 @@ class LeaderboardEvaluator(object):
                 map(lambda x: '%02d' % x, (now.month, now.day, now.hour, now.minute, now.second))
             )
 
+            self.route_date_string = route_date_string
+
             self._agent_watchdog = Watchdog(args.timeout)
             self._agent_watchdog.start()
             agent_class_name = getattr(self.module_agent, 'get_entry_point')()
@@ -450,6 +452,17 @@ class LeaderboardEvaluator(object):
 
         return crashed
 
+    def compress_data(self):
+        data_path = os.environ["SAVE_PATH"] + "/"
+        data_path += os.environ["TOWN"]
+        data_path += "_Rep" + os.environ["REPETITION"]
+        data_path += f"_{self.route_date_string}"
+        if os.path.isdir(data_path):
+            cmd = f"tar -czf {data_path}.tar.gz {data_path} --remove-files"
+            print(f"{cmd}")
+            os.system(cmd)
+
+
 def main():
     description = "CARLA AD Leaderboard Evaluation: evaluate your Agent in CARLA scenarios\n"
 
@@ -499,14 +512,16 @@ def main():
 
     statistics_manager = StatisticsManager(arguments.checkpoint, arguments.debug_checkpoint)
     leaderboard_evaluator = LeaderboardEvaluator(arguments, statistics_manager)
-    crashed = leaderboard_evaluator.run(arguments)
 
-    del leaderboard_evaluator
+    crashed = leaderboard_evaluator.run(arguments)
 
     if crashed:
         sys.exit(-1)
-    else:
-        sys.exit(0)
+
+    import time
+    time.sleep(2)
+    leaderboard_evaluator.compress_data()
+    sys.exit(0)
 
 if __name__ == '__main__':
     main()

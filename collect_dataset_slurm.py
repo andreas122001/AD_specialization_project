@@ -34,10 +34,10 @@ def make_bash(
     jobfile = f"{data_save_root}/start_files/{route_file_number}_Rep{repetition}.sh"
     # create folder
     Path(jobfile).parent.mkdir(parents=True, exist_ok=True)
-    run_command = "python leaderboard/leaderboard/leaderboard_evaluator_local.py --port=${FREE_WORLD_PORT} \
+    run_command = "python -u leaderboard/leaderboard/leaderboard_evaluator_local.py --port=${FREE_WORLD_PORT} \
         --traffic-manager-port=${TM_PORT} --traffic-manager-seed=${TM_SEED} --routes=${ROUTES} --repetitions=${REPETITIONS} \
             --track=${CHALLENGE_TRACK_CODENAME} --checkpoint=${CHECKPOINT_ENDPOINT} --agent=${TEAM_AGENT} \
-                --agent-config=${TEAM_CONFIG} --debug=0 --resume=${RESUME} --timeout=600"
+                --agent-config=${TEAM_CONFIG} --debug=0 --resume=${RESUME} --timeout=120"
 
     qsub_template = f"""#!/bin/bash
 export SCENARIO_RUNNER_ROOT={code_dir}/scenario_runner_autopilot
@@ -191,7 +191,7 @@ def make_jobsub_file(
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=8
-#SBATCH --mem=20gb
+#SBATCH --mem=16gb
 #SBATCH --time={timeout}
 #SBATCH --gres=gpu:1
 # -------------------------------
@@ -298,7 +298,7 @@ if __name__ == "__main__":
                 routefile_number,
                 partition,
                 repetition,
-                "0-04:00",
+                "0-02:00:00",
             )
 
             # Wait until submitting new jobs that the #jobs are at below max
