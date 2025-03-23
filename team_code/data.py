@@ -102,7 +102,7 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
                 # pred_len so that we have enough waypoint labels
                 last_frame = (
                     num_seq
-                    - (self.config.seq_len - 1)
+                    - (self.config.seq_len - 1) * self.config.seq_step
                     - (0 if not self.config.use_wp_gru else self.config.pred_len)
                 )
 
@@ -213,12 +213,7 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
                     measurement.append(route_dir + "/measurements")
 
                     if estimate_class_distributions:
-                        with gzip.open(
-                            measurement[-1] + f"/{(seq):04}.json.gz",
-                            "rt",
-                            encoding="utf-8",
-                        ) as f:
-                            measurements_i = ujson.load(f)
+                        measurements_i = self._load_measurements(measurement[-1] + f"/{(seq):04}.json.gz")
 
                         target_speed_index, angle_index = self.get_indices_speed_angle(
                             target_speed=measurements_i["target_speed"],
@@ -394,8 +389,7 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
             if (not self.data_cache is None) and (measurement_file in self.data_cache):
                 measurements_i = self.data_cache[measurement_file]
             else:
-                with gzip.open(measurement_file, "rt", encoding="utf-8") as f1:
-                    measurements_i = ujson.load(f1)
+                measurements_i = self._load_measurements(measurement_file)
 
                 if not self.data_cache is None:
                     self.data_cache[measurement_file] = measurements_i
@@ -415,8 +409,7 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
             if (not self.data_cache is None) and (measurement_file in self.data_cache):
                 measurements_i = self.data_cache[measurement_file]
             else:
-                with gzip.open(measurement_file, "rt", encoding="utf-8") as f1:
-                    measurements_i = ujson.load(f1)
+                measurements_i = self._load_measurements(measurement_file)
 
                 if not self.data_cache is None:
                     self.data_cache[measurement_file] = measurements_i
@@ -489,74 +482,46 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
 
                 # Load bounding boxes
                 if self.config.detect_boxes or self.config.use_plant:
-                    with gzip.open(
-                        str(boxes[i], encoding="utf-8"), "rt", encoding="utf-8"
-                    ) as f2:
-                        boxes_i = ujson.load(f2)
+                    boxes_i = self._load_boxes(str(boxes[i], encoding="utf-8"))
+
                     if self.config.use_plant:
-                        with gzip.open(
-                            str(future_boxes[i], encoding="utf-8"),
-                            "rt",
-                            encoding="utf-8",
-                        ) as f2:
-                            future_boxes_i = ujson.load(f2)
+                        future_boxes_i = self._load_boxes(str(future_boxes[i], encoding="utf-8"))
 
                 if not self.config.use_plant:
-                    las_object = laspy.read(str(lidars[i], encoding="utf-8"))
-                    lidars_i = las_object.xyz
+                    lidars_i = self._load_lidar(str(lidars[i], encoding="utf-8"))
 
-                    images_i = cv2.imread(
-                        str(images[i], encoding="utf-8"), cv2.IMREAD_COLOR
-                    )
-                    images_i = cv2.cvtColor(images_i, cv2.COLOR_BGR2RGB)
-                    images_i = t_u.crop_array(self.config, images_i)
+                    images_i = self._load_image(str(images[i], encoding="utf-8"))
 
                     if self.config.use_semantic:
-                        semantics_i = cv2.imread(
-                            str(semantics[i], encoding="utf-8"), cv2.IMREAD_UNCHANGED
+                        semantics_i = self._load_semantics(
+                            str(semantics[i], encoding="utf-8")
                         )
-                        semantics_i = t_u.crop_array(self.config, semantics_i)
                     if self.config.use_bev_semantic:
-                        bev_semantics_i = cv2.imread(
-                            str(bev_semantics[i], encoding="utf-8"),
-                            cv2.IMREAD_UNCHANGED,
+                        bev_semantics_i = self._load_bev_semantics(
+                            str(bev_semantics[i], encoding="utf-8")
                         )
+
                     if self.config.use_depth:
-                        depth_i = cv2.imread(
-                            str(depth[i], encoding="utf-8"), cv2.IMREAD_UNCHANGED
-                        )
-                        depth_i = t_u.crop_array(self.config, depth_i)
+                        depth_i = self._load_depth(str(depth[i], encoding="utf-8"))
+
                     if self.config.augment:
-                        images_augmented_i = cv2.imread(
-                            str(images_augmented[i], encoding="utf-8"), cv2.IMREAD_COLOR
+                        images_augmented_i = self._load_image(
+                            str(images_augmented[i], encoding="utf-8")
                         )
-                        images_augmented_i = cv2.cvtColor(
-                            images_augmented_i, cv2.COLOR_BGR2RGB
-                        )
-                        images_augmented_i = t_u.crop_array(
-                            self.config, images_augmented_i
-                        )
+
                         if self.config.use_semantic:
-                            semantics_augmented_i = cv2.imread(
-                                str(semantics_augmented[i], encoding="utf-8"),
-                                cv2.IMREAD_UNCHANGED,
+                            semantics_augmented_i = self._load_semantics(
+                                str(semantics_augmented[i], encoding="utf-8")
                             )
-                            semantics_augmented_i = t_u.crop_array(
-                                self.config, semantics_augmented_i
-                            )
+
                         if self.config.use_bev_semantic:
-                            bev_semantics_augmented_i = cv2.imread(
-                                str(bev_semantics_augmented[i], encoding="utf-8"),
-                                cv2.IMREAD_UNCHANGED,
+                            bev_semantics_augmented_i = self._load_bev_semantics(
+                                str(bev_semantics_augmented[i], encoding="utf-8")
                             )
 
                         if self.config.use_depth:
-                            depth_augmented_i = cv2.imread(
-                                str(depth_augmented[i], encoding="utf-8"),
-                                cv2.IMREAD_UNCHANGED,
-                            )
-                            depth_augmented_i = t_u.crop_array(
-                                self.config, depth_augmented_i
+                            depth_augmented_i = self._load_depth(
+                                str(depth_augmented[i], encoding="utf-8")
                             )
 
                 # Store data inside disc cache
@@ -681,13 +646,8 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
         if self.config.lidar_seq_len > 1 and not self.config.use_plant:
             # Temporal data just for LiDAR
             for i in range(self.config.lidar_seq_len):
-                with gzip.open(temporal_measurements[i], "rt", encoding="utf-8") as f1:
-                    temporal_measurements_i = ujson.load(f1)
-
-                las_object_temporal = laspy.read(
-                    str(temporal_lidars[i], encoding="utf-8")
-                )
-                temporal_lidars_i = las_object_temporal.xyz
+                temporal_measurements_i = self._load_measurements(temporal_measurements[i])
+                temporal_lidars_i = self._load_lidar(str(temporal_lidars[i], encoding="utf-8"))
 
                 loaded_temporal_lidars.append(temporal_lidars_i)
                 loaded_temporal_measurements.append(temporal_measurements_i)
@@ -712,6 +672,9 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
             aug_translation = 0.0
 
         if not self.config.use_plant:
+            # TODO loading by static index, we want to load all images, not just this one
+
+            # Here we load images, semantic, bev_Semantic and depth
             if self.config.augment and augment_sample:
                 if self.config.use_color_aug:
                     processed_image = self.image_augmenter_func(
@@ -758,6 +721,7 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
                         loaded_depth[self.config.seq_len - 1].astype(np.float32) / 255.0
                     )  # pylint: disable=locally-disabled, unsubscriptable-object
 
+            # TODO: this must be changed to add a sequence dimension
             # The indexing is an elegant way to down-sample the semantic images without interpolation or changing the dtype
             if self.config.use_semantic:
                 data["semantic"] = semantics_i[
@@ -1588,6 +1552,40 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
         interpolated_route_points = np.array(interpolated_route_points)
         return interpolated_route_points
 
+    def _load_lidar(self, path: Union[str, os.PathLike]) -> np.ndarray:
+        las_object = laspy.read(path)
+        lidars_i = las_object.xyz
+        return lidars_i
+
+    def _load_image(self, path: Union[str, os.PathLike]) -> np.ndarray:
+        images_i = cv2.imread(path, cv2.IMREAD_COLOR)
+        images_i = cv2.cvtColor(images_i, cv2.COLOR_BGR2RGB)
+        images_i = t_u.crop_array(self.config, images_i)
+        return images_i
+
+    def _load_semantics(self, path: Union[str, os.PathLike]) -> np.ndarray:
+        semantics_i = cv2.imread(path, cv2.IMREAD_UNCHANGED)
+        semantics_i = t_u.crop_array(self.config, semantics_i)
+        return semantics_i
+
+    def _load_bev_semantics(self, path: Union[str, os.PathLike]) -> np.ndarray:
+        bev_semantics_i = cv2.imread(path, cv2.IMREAD_UNCHANGED)
+        return bev_semantics_i
+
+    def _load_depth(self, path: Union[str, os.PathLike]) -> np.ndarray:
+        depth_i = cv2.imread(path, cv2.IMREAD_UNCHANGED)
+        depth_i = t_u.crop_array(self.config, depth_i)
+        return depth_i
+
+    def _load_boxes(self, path: Union[str, os.PathLike]) -> np.ndarray:
+        with gzip.open(path, "rt", encoding="utf-8") as f:
+            boxes_i = ujson.load(f)
+        return boxes_i
+
+    def _load_measurements(self, path: Union[str, os.PathLike]) -> np.ndarray:
+        with gzip.open(path, "rt", encoding="utf-8") as f:
+            measurements_i = ujson.load(f)
+        return measurements_i
 
 def image_augmenter(prob=0.2, cutout=False):
     augmentations = [
