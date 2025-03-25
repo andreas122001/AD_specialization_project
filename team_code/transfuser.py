@@ -10,6 +10,7 @@ import timm
 from video_swin_transformer import SwinTransformer3D
 import transfuser_utils as t_u
 from video_resnet import VideoResNet
+from config import GlobalConfig
 import copy
 
 
@@ -18,13 +19,13 @@ class TransfuserBackbone(nn.Module):
     Multi-scale Fusion Transformer for image + LiDAR feature fusion
     """
 
-    def __init__(self, config):
+    def __init__(self, config: GlobalConfig):
         super().__init__()
         self.config = config
 
-        self.image_encoder = timm.create_model(
-            config.image_architecture, pretrained=True, features_only=True
-        )
+        self.image_video = False
+        if config.image_architecture in ("video_resnet18", "video_swin_tiny"):
+            self.image_video = True
 
         self.lidar_video = False
         if config.lidar_architecture in ("video_resnet18", "video_swin_tiny"):
@@ -35,55 +36,9 @@ class TransfuserBackbone(nn.Module):
         else:
             in_channels = config.lidar_seq_len
 
-        self.avgpool_img = nn.AdaptiveAvgPool2d(
-            (self.config.img_vert_anchors, self.config.img_horz_anchors)
-        )
+        image_time_frames = self._setup_image_encoder(config)
+        lidar_time_frames = self._setup_lidar_encoder(in_channels, config)
 
-        if config.lidar_architecture == "video_resnet18":
-            self.lidar_encoder = VideoResNet(
-                in_channels=1 + int(config.use_ground_plane), pretrained=False
-            )
-            self.global_pool_lidar = nn.AdaptiveAvgPool3d(output_size=1)
-            self.avgpool_lidar = nn.AdaptiveAvgPool3d(
-                (None, self.config.lidar_vert_anchors, self.config.lidar_horz_anchors)
-            )
-            lidar_time_frames = [
-                config.lidar_seq_len,
-                max(1, (config.lidar_seq_len + 1) // 2),
-                max(1, (config.lidar_seq_len + 3) // 4),
-                max(1, (config.lidar_seq_len + 7) // 8),
-            ]
-
-        elif config.lidar_architecture == "video_swin_tiny":
-            self.lidar_encoder = SwinTransformer3D(
-                pretrained=False,
-                pretrained2d=False,
-                in_chans=1 + int(config.use_ground_plane),
-            )
-            self.global_pool_lidar = nn.AdaptiveAvgPool3d(output_size=1)
-            self.avgpool_lidar = nn.AdaptiveAvgPool3d(
-                (None, self.config.lidar_vert_anchors, self.config.lidar_horz_anchors)
-            )
-            lidar_time_frames = [
-                (config.lidar_seq_len + 1) // 2,
-                (config.lidar_seq_len + 1) // 2,
-                (config.lidar_seq_len + 1) // 2,
-                (config.lidar_seq_len + 1) // 2,
-            ]
-        else:
-            self.lidar_encoder = timm.create_model(
-                config.lidar_architecture,
-                pretrained=False,
-                in_chans=in_channels,
-                features_only=True,
-            )
-            self.global_pool_lidar = nn.AdaptiveAvgPool2d(output_size=1)
-            self.avgpool_lidar = nn.AdaptiveAvgPool2d(
-                (self.config.lidar_vert_anchors, self.config.lidar_horz_anchors)
-            )
-            lidar_time_frames = [1, 1, 1, 1]
-
-        self.global_pool_img = nn.AdaptiveAvgPool2d(output_size=1)
         start_index = 0
         # Some networks have a stem layer
         if len(self.image_encoder.return_layers) > 4:
@@ -95,6 +50,8 @@ class TransfuserBackbone(nn.Module):
                         "num_chs"
                     ],
                     config=config,
+                    image_video=self.image_video,
+                    image_time_frames=image_time_frames[i],
                     lidar_video=self.lidar_video,
                     lidar_time_frames=lidar_time_frames[i],
                 )
@@ -243,6 +200,11 @@ class TransfuserBackbone(nn.Module):
         else:
             image_features = image
 
+        if self.image_video:
+            batch_size = image_features.shape[0]
+            image_features = image_features.permute(0,2,1,3,4)
+
+
         if self.lidar_video:
             batch_size = lidar.shape[0]
             lidar_features = lidar.view(
@@ -340,6 +302,9 @@ class TransfuserBackbone(nn.Module):
         image_embd_layer = self.avgpool_img(image_features)
         lidar_embd_layer = self.avgpool_lidar(lidar_features)
 
+        # image_embd_layer = self.img_channel_to_lidar[layer_idx](image_embd_layer)
+        print(f"image_feat: {image_features.shape}\nlidar_embed_layer: {lidar_embd_layer.shape}\n")
+
         lidar_embd_layer = self.lidar_channel_to_img[layer_idx](lidar_embd_layer)
 
         image_features_layer, lidar_features_layer = self.transformers[layer_idx](
@@ -349,13 +314,24 @@ class TransfuserBackbone(nn.Module):
         lidar_features_layer = self.img_channel_to_lidar[layer_idx](
             lidar_features_layer
         )
-
-        image_features_layer = F.interpolate(
-            image_features_layer,
-            size=(image_features.shape[2], image_features.shape[3]),
-            mode="bilinear",
-            align_corners=False,
-        )
+        if self.image_video:
+            image_features_layer = F.interpolate(
+                image_features_layer,
+                size=(
+                    image_features.shape[2],
+                    image_features.shape[3],
+                    image_features.shape[4],
+                ),
+                mode="trilinear",
+                align_corners=False,
+            )
+        else:
+            image_features_layer = F.interpolate(
+                image_features_layer,
+                size=(image_features.shape[2], image_features.shape[3]),
+                mode="bilinear",
+                align_corners=False,
+            )
         if self.lidar_video:
             lidar_features_layer = F.interpolate(
                 lidar_features_layer,
@@ -379,25 +355,125 @@ class TransfuserBackbone(nn.Module):
 
         return image_features, lidar_features
 
+    def _setup_image_encoder(self, config: GlobalConfig):
+        if config.image_architecture == "video_resnet18":
+            self.image_encoder = VideoResNet(in_channels=3, pretrained=False)
+            self.global_pool_img = nn.AdaptiveAvgPool3d(output_size=1)
+            self.avgpool_img = nn.AdaptiveAvgPool3d(
+                (None, self.config.img_vert_anchors, self.config.img_horz_anchors)
+            )
+            image_time_frames = [
+                config.img_seq_len,
+                max(1, (config.img_seq_len + 1) // 2),
+                max(1, (config.img_seq_len + 3) // 4),
+                max(1, (config.img_seq_len + 7) // 8),
+            ]
+
+        elif config.image_architecture == "video_swin_tiny":
+            self.image_encoder = SwinTransformer3D(
+                pretrained=False,
+                pretrained2d=False,
+                in_chans=3,
+            )
+            self.global_pool_img = nn.AdaptiveAvgPool3d(output_size=1)
+            self.avgpool_img = nn.AdaptiveAvgPool3d(
+                (None, self.config.img_vert_anchors, self.config.img_horz_anchors)
+            )
+            image_time_frames = [
+                (config.img_seq_len + 1) // 2,
+                (config.img_seq_len + 1) // 2,
+                (config.img_seq_len + 1) // 2,
+                (config.img_seq_len + 1) // 2,
+            ]
+        else:
+            self.image_encoder = timm.create_model(
+                config.image_architecture, pretrained=True, features_only=True
+            )
+            self.global_pool_img = nn.AdaptiveAvgPool2d(output_size=1)
+            self.avgpool_img = nn.AdaptiveAvgPool2d(
+                (self.config.img_vert_anchors, self.config.img_horz_anchors)
+            )
+            image_time_frames = [1, 1, 1, 1]
+
+        return image_time_frames
+
+    def _setup_lidar_encoder(self, in_channels: int, config: GlobalConfig):
+        if config.lidar_architecture == "video_resnet18":
+            self.lidar_encoder = VideoResNet(
+                in_channels=1 + int(config.use_ground_plane), pretrained=False
+            )
+            self.global_pool_lidar = nn.AdaptiveAvgPool3d(output_size=1)
+            self.avgpool_lidar = nn.AdaptiveAvgPool3d(
+                (None, self.config.lidar_vert_anchors, self.config.lidar_horz_anchors)
+            )
+            lidar_time_frames = [
+                config.lidar_seq_len,
+                max(1, (config.lidar_seq_len + 1) // 2),
+                max(1, (config.lidar_seq_len + 3) // 4),
+                max(1, (config.lidar_seq_len + 7) // 8),
+            ]
+
+        elif config.lidar_architecture == "video_swin_tiny":
+            self.lidar_encoder = SwinTransformer3D(
+                pretrained=False,
+                pretrained2d=False,
+                in_chans=1 + int(config.use_ground_plane),
+            )
+            self.global_pool_lidar = nn.AdaptiveAvgPool3d(output_size=1)
+            self.avgpool_lidar = nn.AdaptiveAvgPool3d(
+                (None, self.config.lidar_vert_anchors, self.config.lidar_horz_anchors)
+            )
+            lidar_time_frames = [
+                (config.lidar_seq_len + 1) // 2,
+                (config.lidar_seq_len + 1) // 2,
+                (config.lidar_seq_len + 1) // 2,
+                (config.lidar_seq_len + 1) // 2,
+            ]
+        else:
+            self.lidar_encoder = timm.create_model(
+                config.lidar_architecture,
+                pretrained=False,
+                in_chans=in_channels,
+                features_only=True,
+            )
+            self.global_pool_lidar = nn.AdaptiveAvgPool2d(output_size=1)
+            self.avgpool_lidar = nn.AdaptiveAvgPool2d(
+                (self.config.lidar_vert_anchors, self.config.lidar_horz_anchors)
+            )
+            lidar_time_frames = [1, 1, 1, 1]
+        return lidar_time_frames
+
 
 class GPT(nn.Module):
     """the full GPT language backbone, with a context size of block_size"""
 
-    def __init__(self, n_embd, config, lidar_video, lidar_time_frames):
+    def __init__(
+        self,
+        n_embd,
+        config: GlobalConfig,
+        image_video,
+        image_time_frames,
+        lidar_video,
+        lidar_time_frames,
+    ):
         super().__init__()
         self.n_embd = n_embd
         # We currently only support seq len 1
         self.seq_len = 1
+        self.image_video = image_video
         self.lidar_video = lidar_video
         self.lidar_seq_len = config.lidar_seq_len
+        self.img_seq_len = config.img_seq_len
         self.config = config
         self.lidar_time_frames = lidar_time_frames
+        self.image_time_frames = image_time_frames
 
         # positional embedding parameter (learnable), image + lidar
         self.pos_emb = nn.Parameter(
             torch.zeros(
                 1,
                 self.seq_len
+                * image_time_frames
                 * self.config.img_vert_anchors
                 * self.config.img_horz_anchors
                 + lidar_time_frames
@@ -453,12 +529,22 @@ class GPT(nn.Module):
         else:
             lidar_h, lidar_w = lidar_tensor.shape[2:4]
 
-        img_h, img_w = image_tensor.shape[2:4]
+        if self.image_video:
+            # (B, T, C, H, W)
+            img_h, img_w = image_tensor.shape[3:5]
+        else:
+            # (B, C, H, W)
+            img_h, img_w = image_tensor.shape[2:4]
 
         assert self.seq_len == 1
-        image_tensor = (
-            image_tensor.permute(0, 2, 3, 1).contiguous().view(bz, -1, self.n_embd)
-        )
+        if self.image_video:
+            image_tensor = (
+                image_tensor.permute(0, 2, 3, 4, 1).contiguous().view(bz, -1, self.n_embd)
+            )
+        else: 
+            image_tensor = (
+                image_tensor.permute(0, 2, 3, 1).contiguous().view(bz, -1, self.n_embd)
+            )
         if self.lidar_video:
             lidar_tensor = (
                 lidar_tensor.permute(0, 2, 3, 4, 1)
@@ -470,9 +556,9 @@ class GPT(nn.Module):
                 lidar_tensor.permute(0, 2, 3, 1).contiguous().view(bz, -1, self.n_embd)
             )
 
-        print(self.lidar_time_frames, image_tensor.shape, lidar_tensor.shape, self.pos_emb.shape)
-
         token_embeddings = torch.cat((image_tensor, lidar_tensor), dim=1)
+
+        print(f"image_time_frames: {self.image_time_frames}, pos_emb: {self.pos_emb.shape}, embeddings: {token_embeddings.shape}")
 
         x = self.drop(self.pos_emb + token_embeddings)
         x = self.blocks(x)  # (B, an * T, C)
