@@ -206,6 +206,11 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
                             + "/boxes"
                             + (f"/{(seq + idx + forcast_step):04}.json.gz")
                         )
+                        # measurement.append(
+                        #     route_dir + 
+                        #     "/measurements" 
+                        #     + f"/{(seq + idx + forcast_step):04}.json.gz"
+                        # )
 
                     # we only store the root and compute the file name when loading,
                     # because storing 40 * long string per sample can go out of memory.
@@ -366,454 +371,459 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
         lidars = self.lidars[index]
         boxes = self.boxes[index]
         future_boxes = self.future_boxes[index]
-        measurements = self.measurements[index]
+
+        # if self.config.img_seq_len > 1:
+        #     temporal_images = self.temporal_images[index]
+        # if self.config.lidar_seq_len > 1:
+        #     temporal_lidars = self.temporal_lidars[index]
+        #     temporal_measurements = self.temporal_measurements[index]
+        
+        # we need to calculate the paths, since they are too large to put in the index
+        measurement_root = self.measurements[index][0]
         sample_start = self.sample_start[index]
 
-        if self.config.lidar_seq_len > 1:
-            temporal_lidars = self.temporal_lidars[index]
-            temporal_measurements = self.temporal_measurements[index]
-
-        # load measurements
-        loaded_images = []
-        loaded_images_augmented = []
-        loaded_semantics = []
-        loaded_semantics_augmented = []
-        loaded_bev_semantics = []
-        loaded_bev_semantics_augmented = []
-        loaded_depth = []
-        loaded_depth_augmented = []
-        loaded_lidars = []
-        loaded_boxes = []
-        loaded_future_boxes = []  # can potentially use for trajectory prediction
-        loaded_measurements = []
-
-        # Because the strings are stored as numpy byte objects we need to
-        # convert them back to utf-8 strings
-
         # Since we load measurements for future time steps, we load and store them separately
+        loaded_measurements = []
         for i in range(self.config.seq_len):
-            measurement_file = str(measurements[0], encoding="utf-8") + (
+            measurement_file = str(measurement_root, encoding="utf-8") + (
                 f"/{(sample_start + i):04}.json.gz"
             )
-
             measurements_i = self._load_json_gz(measurement_file)
             loaded_measurements.append(measurements_i)
-
+        # If we were to use the GRU for WP prediction, we need the future measurements
+        # (is how I interpret this code at least)
         if self.config.use_wp_gru:
             end = self.config.pred_len + self.config.seq_len
             start = self.config.seq_len
-        else:
-            end = 0
-            start = 0
-        for i in range(start, end, self.config.wp_dilation):
-            measurement_file = str(measurements[0], encoding="utf-8") + (
-                f"/{(sample_start + i):04}.json.gz"
+            for i in range(start, end, self.config.wp_dilation):
+                measurement_file = str(measurement_root, encoding="utf-8") + (
+                    f"/{(sample_start + i):04}.json.gz"
+                )
+                measurements_i = self._load_json_gz(measurement_file)
+                loaded_measurements.append(measurements_i)
+
+
+        # loaded_temporal_lidars = []
+        # loaded_temporal_measurements = []
+        # if self.config.lidar_seq_len > 1:
+        #     # Temporal data just for LiDAR
+        #     for i in range(self.config.lidar_seq_len):
+        #         temporal_measurements_i = self._load_json_gz(
+        #             temporal_measurements[i]
+        #         )
+        #         temporal_lidars_i = self._load_lidar(
+        #             str(temporal_lidars[i], encoding="utf-8")
+        #         )
+
+        #         loaded_temporal_lidars.append(temporal_lidars_i)
+        #         loaded_temporal_measurements.append(temporal_measurements_i)
+
+        #     loaded_temporal_lidars.reverse()
+        #     loaded_temporal_measurements.reverse()
+
+        # Here we load all inputs as sequences of frames
+        # This would allow a model to process the data sequentially if seq_len > 1
+        # To avoid complications, temporal rgb and temporal lidar are loaded in a separate loop
+        # Temporal rgb and temporal lidar should not be used with seq_len > 1
+        #   (it makes no sense to have a sequence of sequences of images or lidars...)
+
+        loaded_images = []
+        loaded_semantics = []
+        loaded_bev_semantics = []
+        loaded_depth = []
+        loaded_lidars = []
+        loaded_boxes = []
+        loaded_future_boxes = []  # TODO: can potentially use for trajectory prediction
+        # bounding box related data
+        box_targets = []
+        avg_factors = []
+
+        target_point_seq = []
+        target_point_next_seq = []
+        route_seq = []
+        
+        brake_seq = []
+        angle_index_seq = []
+        target_speed_seq = []
+        target_speed_twohot_seq = []
+
+        # For lidar alignment, we need the current frame
+        # TODO: but what is "current" if temporal frames are processed independently?
+        current_measurement = loaded_measurements[self.config.seq_len - 1]  # last 
+        # TODO: 
+        #   maybe ralignment should be turned off if we use a sequence?
+        #   It kinda only makes sense if we input the whole sequence to the model
+        #   Like early temporal fusion
+        #   With temporal streaming, the frames would realign to an unknown future frame, which doesn't make sense
+        #   Perhaps this should be discussed in more depth
+
+        # Load and process all frames
+        for idx in range(self.config.seq_len):
+            measurement_i = loaded_measurements[i]
+
+            # Determine whether the augmented camera or the normal camera is used.
+            if (
+                random.random() <= self.config.augment_percentage
+                and self.config.augment
+            ):
+                # TODO: should we use per-timestep augment, or one for all timesteps?
+                aug_rotation = measurement_i["augmentation_rotation"]
+                aug_translation = measurement_i["augmentation_translation"]
+                images_path = str(images_augmented[idx], encoding="utf-8")
+                semantics_path = str(semantics_augmented[idx], encoding="utf-8")
+                bev_semantics_path = str(bev_semantics_augmented[idx], encoding="utf-8")
+                depth_path = str(depth_augmented[idx], encoding="utf-8")
+            else:
+                aug_rotation = 0.0
+                aug_translation = 0.0
+                images_path = str(images[idx], encoding="utf-8")
+                semantics_path = str(semantics[idx], encoding="utf-8")
+                bev_semantics_path = str(bev_semantics[idx], encoding="utf-8")
+                depth_path = str(depth[idx], encoding="utf-8")
+            
+            # Augment target points
+            target_point = self.augment_target_point(
+                np.array(measurement_i["target_point"]), 
+                y_augmentation=aug_translation, 
+                yaw_augmentation=aug_rotation
             )
-            measurements_i = self._load_json_gz(measurement_file)
-            loaded_measurements.append(measurements_i)
+            target_point_seq.append(target_point)            
+            target_point_next = self.augment_target_point(
+                np.array(measurement_i["target_point_next"]), 
+                y_augmentation=aug_translation, 
+                yaw_augmentation=aug_rotation
+            )
+            target_point_next_seq.append(target_point_next)     
 
-        for i in range(self.config.seq_len):  # Load data from disc
+            # Augment and process the route
+            route = measurement_i["route"]
+            if len(route) < self.config.num_route_points:
+                num_missing = self.config.num_route_points - len(route)
+                route = np.array(route)
+                # Fill the empty spots by repeating the last point.
+                route = np.vstack((route, np.tile(route[-1], (num_missing, 1))))
+            else:
+                route = np.array(route[: self.config.num_route_points])
 
-            semantics_i = None
-            semantics_augmented_i = None
-            bev_semantics_i = None
-            bev_semantics_augmented_i = None
-            depth_i = None
-            depth_augmented_i = None
-            images_i = None
-            images_augmented_i = None
-            lidars_i = None
-            future_boxes_i = None
-            boxes_i = None
+            route = self.augment_route(
+                route, y_augmentation=aug_translation, yaw_augmentation=aug_rotation
+            )
+            if self.config.smooth_route:
+                route = self.smooth_path(route)
+            route_seq.append(route)
 
-            # Load current and future bounding boxes
+            # Convert target speed and angles to indexes
+            brake = measurement_i["brake"]
+
+            target_speed_index, angle_index = self.get_indices_speed_angle(
+                target_speed=measurement_i["target_speed"],
+                brake=brake,
+                angle=measurement_i["angle"],
+            )
+            target_speed_seq.append(target_speed_index)
+            angle_index_seq.append(angle_index)
+            target_speed_twohot = self.get_two_hot_encoding(
+                measurement_i["target_speed"], self.config.target_speeds, brake
+            )
+            target_speed_twohot_seq.append(target_speed_twohot)
+            brake_seq.append(brake)
+
+            # Because the strings are stored as numpy byte objects we need to
+            # convert them back to utf-8 strings
+            lidar_path = str(lidars[idx], encoding="utf-8")
+
+            image_i = self._process_image(
+                self._load_jpg(images_path)
+            )
+            loaded_images.append(image_i)
+
+            # Load optional aux images
+            if self.config.use_semantic:
+                semantic_i = self._process_semantics(self._load_png(semantics_path))
+                loaded_semantics.append(semantic_i)
+            if self.config.use_bev_semantic:
+                bev_semantic_i = self._process_bev_semantics(self._load_png(bev_semantics_path, crop=False))
+                loaded_bev_semantics.append(bev_semantic_i)
+            if self.config.use_depth:
+                depth_i = self._process_depth(self._load_png(depth_path))
+                loaded_depth.append(depth_i)
+
+            # Load boxes (and future boxes)
             if self.config.detect_boxes:
-                boxes_i = self._load_json_gz(str(boxes[i], encoding="utf-8"))
+                boxes_i = future_boxes_i = None
+
+                box_path = str(boxes[i], encoding="utf-8")
+                boxes_i = self._load_json_gz(box_path)
 
                 if self.config.use_plant:
+                    future_box_path = str(future_boxes[i], encoding="utf-8")
                     future_boxes_i = self._load_json_gz(
-                        str(future_boxes[i], encoding="utf-8")
+                        future_box_path
                     )
-
-            lidars_i = self._load_lidar(str(lidars[i], encoding="utf-8"))
-
-            images_i = self._load_jpg(str(images[i], encoding="utf-8"))
-
-            if self.config.use_semantic:
-                semantics_i = self._load_png(
-                    str(semantics[i], encoding="utf-8")
+                # Process and pad the boxes
+                boxes_i, future_boxes_i = self._process_boxes(
+                    boxes_i, future_boxes_i, aug_translation, aug_rotation
                 )
-            if self.config.use_bev_semantic:
-                bev_semantics_i = self._load_png(
-                    str(bev_semantics[i], encoding="utf-8"), crop=False
+                loaded_boxes.append(boxes_i)
+                if future_boxes_i is not None:
+                    loaded_future_boxes.append(future_boxes_i)
+
+                # Get the targets from the current boxes
+                target_result, avg_factor = self.get_targets(
+                    boxes_i,
+                    self.config.lidar_resolution_height
+                    // self.config.bev_down_sample_factor,
+                    self.config.lidar_resolution_width
+                    // self.config.bev_down_sample_factor,
                 )
+                box_targets.append(target_result)
+                avg_factors.append(avg_factor)
 
-            if self.config.use_depth:
-                depth_i = self._load_png(str(depth[i], encoding="utf-8"))
-
-            if self.config.augment:
-                images_augmented_i = self._load_jpg(
-                    str(images_augmented[i], encoding="utf-8")
-                )
-
-                if self.config.use_semantic:
-                    semantics_augmented_i = self._load_png(
-                        str(semantics_augmented[i], encoding="utf-8")
-                    )
-
-                if self.config.use_bev_semantic:
-                    bev_semantics_augmented_i = self._load_png(
-                        str(bev_semantics_augmented[i], encoding="utf-8"), crop=False
-                    )
-
-                if self.config.use_depth:
-                    depth_augmented_i = self._load_png(
-                        str(depth_augmented[i], encoding="utf-8")
-                    )
-
-            loaded_images.append(images_i)
-            loaded_images_augmented.append(images_augmented_i)
-            if self.config.use_semantic:
-                loaded_semantics.append(semantics_i)
-                loaded_semantics_augmented.append(semantics_augmented_i)
-            if self.config.use_bev_semantic:
-                # NOTE the BEV label can unfortunately only be saved up to 2.0 ppm resolution. We upscale it here.
-                # If you change these values you might need to change the up-scaling as well.
-                assert self.config.pixels_per_meter == 4.0
-                assert self.config.pixels_per_meter_collection == 2.0
-                assert self.config.lidar_resolution_width == 256
-                assert self.config.lidar_resolution_height == 256
-                assert self.config.max_x == 32
-                assert self.config.min_x == -32
-                if self.config.pixels_per_meter == 4.0:
-                    bev_semantics_i = (
-                        bev_semantics_i[64:192, 64:192]
-                        .repeat(2, axis=0)
-                        .repeat(2, axis=1)
-                    )
-                    bev_semantics_augmented_i = (
-                        bev_semantics_augmented_i[64:192, 64:192]
-                        .repeat(2, axis=0)
-                        .repeat(2, axis=1)
-                    )
-
-                loaded_bev_semantics.append(bev_semantics_i)
-                loaded_bev_semantics_augmented.append(bev_semantics_augmented_i)
-            if self.config.use_depth:
-                loaded_depth.append(depth_i)
-                loaded_depth_augmented.append(depth_augmented_i)
-            loaded_lidars.append(lidars_i)
-            loaded_boxes.append(boxes_i)
-            loaded_future_boxes.append(future_boxes_i)
-
-        # Use loaded data
-        loaded_temporal_lidars = []
-        loaded_temporal_measurements = []
-        if self.config.lidar_seq_len > 1:
-            # Temporal data just for LiDAR
-            for i in range(self.config.lidar_seq_len):
-                temporal_measurements_i = self._load_json_gz(
-                    temporal_measurements[i]
-                )
-                temporal_lidars_i = self._load_lidar(
-                    str(temporal_lidars[i], encoding="utf-8")
-                )
-
-                loaded_temporal_lidars.append(temporal_lidars_i)
-                loaded_temporal_measurements.append(temporal_measurements_i)
-
-            loaded_temporal_lidars.reverse()
-            loaded_temporal_measurements.reverse()
-
-        current_measurement = loaded_measurements[self.config.seq_len - 1]
-
-        # Determine whether the augmented camera or the normal camera is used.
-        if (
-            random.random() <= self.config.augment_percentage
-            and self.config.augment
-            and loaded_images_augmented[self.config.seq_len - 1] is not None
-        ):
-            aug_rotation = current_measurement["augmentation_rotation"]
-            aug_translation = current_measurement["augmentation_translation"]
-            loaded_images_choice = loaded_images_augmented
-            loaded_semantics_choice = loaded_semantics_augmented
-            loaded_bev_semantics_choice = loaded_bev_semantics_augmented
-            loaded_depth_choice = loaded_depth_augmented
-        else:
-            aug_rotation = 0.0
-            aug_translation = 0.0
-            loaded_images_choice = loaded_images
-            loaded_semantics_choice = loaded_semantics
-            loaded_bev_semantics_choice = loaded_bev_semantics
-            loaded_depth_choice = loaded_depth
-
-        # TODO loading by static index, we want to load all images, not just this one
-        # TODO need to loop over seq_len
-        # for idx in range(self.config.seq_len):
-        #   image_i = load_image(path)
-        #   image_i = preprocess(image_i)  # apply augments
-        #   images.append(image_i)
-        # data["rgb"] = np.concatenate(images, axis=0)
-
-        # Here we load images, semantic, bev_Semantic and depth
-        if self.config.use_color_aug:
-            processed_image = self.image_augmenter_func(
-                image=loaded_images_choice[self.config.seq_len - 1]
-            )
-        else:
-            processed_image = loaded_images_choice[self.config.seq_len - 1]
-
-        if self.config.use_semantic:
-            semantics_i = self.converter[
-                loaded_semantics_choice[self.config.seq_len - 1]
-            ]  # pylint: disable=locally-disabled, unsubscriptable-object
-        if self.config.use_bev_semantic:
-            bev_semantics_i = self.bev_converter[
-                loaded_bev_semantics_choice[self.config.seq_len - 1]
-            ]  # pylint: disable=locally-disabled, unsubscriptable-object
-        if self.config.use_depth:
-            # We saved the data in 8 bit and now convert back to float.
-            depth_i = (
-                loaded_depth_choice[self.config.seq_len - 1].astype(np.float32)
-                / 255.0
-            )  # pylint: disable=locally-disabled, unsubscriptable-object
-
-        # TODO: this must be changed to add a sequence dimension
-        # The indexing is an elegant way to down-sample the semantic images without interpolation or changing the dtype
-        if self.config.use_semantic:
-            data["semantic"] = semantics_i[
-                :: self.config.perspective_downsample_factor,
-                :: self.config.perspective_downsample_factor,
-            ]
-        if self.config.use_bev_semantic:
-            data["bev_semantic"] = bev_semantics_i
-        if self.config.use_depth:
-            # OpenCV uses Col, Row format
-            data["depth"] = cv2.resize(
-                depth_i,
-                dsize=(
-                    depth_i.shape[1] // self.config.perspective_downsample_factor,
-                    depth_i.shape[0] // self.config.perspective_downsample_factor,
-                ),
-                interpolation=cv2.INTER_LINEAR,
-            )
-        # The transpose change the image into pytorch (C,H,W) format
-        data["rgb"] = np.transpose(processed_image, (2, 0, 1))
-
-        # Load temporal images
-        loaded_temporal_images = []
-        if self.config.img_seq_len > 1:
-            # Temporal data just for LiDAR
-            for i in range(self.config.img_seq_len):
-                temporal_image_i = self._load_jpg(
-                    str(self.temporal_images[i], encoding="utf-8")
-                )
-                if self.config.use_color_aug:
-                    processed_image = self.image_augmenter_func(
-                        image=temporal_image_i
-                    )
-                loaded_temporal_images.append(processed_image)
-
-            loaded_temporal_images.reverse()
-            temporal_image = np.array(loaded_temporal_images)
-            # TODO need to apply augments
-            data["temporal_rgb"] = np.transpose(temporal_image, (0, 3, 1, 2))
-
-        # need to concatenate seq data here and align to the same coordinate
-        lidars = []
-        for i in range(self.config.seq_len):
-            lidar = loaded_lidars[i]
-
+            # Load and align lidar
+            lidar = self._load_lidar(lidar_path)
             # transform lidar to lidar seq-1
-            lidar = self.align(
+            lidar = self.align(  # TODO: should we align to each time step?
                 lidar,
-                loaded_measurements[i],
-                current_measurement,
+                measurements_i,  # if not realign, only applies augments
+                current_measurement if self.config.realign_lidar else measurements_i,
                 y_augmentation=aug_translation,
                 yaw_augmentation=aug_rotation,
             )
-            lidar_bev = self.lidar_to_histogram_features(
+            lidar = self.lidar_to_histogram_features(
                 lidar, use_ground_plane=self.config.use_ground_plane
             )
-            lidars.append(lidar_bev)
-
-        lidar_bev = np.concatenate(lidars, axis=0)
-
-        if self.config.lidar_seq_len > 1:
-            temporal_lidars = []
-            for i in range(self.config.lidar_seq_len):
-                # transform lidar to lidar seq-1
-                if self.config.realign_lidar:
-                    temporal_lidar = self.align(
-                        loaded_temporal_lidars[i],
-                        loaded_temporal_measurements[i],
-                        loaded_temporal_measurements[self.config.lidar_seq_len - 1],
-                        y_augmentation=aug_translation,
-                        yaw_augmentation=aug_rotation,
-                    )
-                else:
-                    # For data augmentation to still occur.
-                    temporal_lidar = self.align(
-                        loaded_temporal_lidars[i],
-                        loaded_temporal_measurements[i],
-                        loaded_temporal_measurements[i],
-                        y_augmentation=aug_translation,
-                        yaw_augmentation=aug_rotation,
-                    )
-                temporal_lidar = self.lidar_to_histogram_features(
-                    temporal_lidar, use_ground_plane=self.config.use_ground_plane
-                )
-                temporal_lidars.append(temporal_lidar)
-
-            temporal_lidar_bev = np.concatenate(temporal_lidars, axis=0)
-
+            lidar = self.lidar_augmenter_func(
+                image=np.transpose(lidar, (1, 2, 0))
+            )
+            lidar = np.transpose(lidar, (2, 0, 1))
+            loaded_lidars.append(lidar)
+        
+        # Converting to array retains the seq dimension
+        # For seq=1, this dimension is removed later
+        data["rgb"] = np.array(loaded_images)
+        data["lidar"] = np.array(loaded_lidars)
+        data["target_point"] = np.array(target_point_seq)
+        data["target_point_next"] = np.array(target_point_next_seq)
+        data["route"] = np.array(route_seq)
+        data["brake"] = np.array(brake_seq)
+        data["angle_index"] = np.array(angle_index_seq)
+        data["target_speed"] = np.array(target_speed_seq)
+        data["target_speed_twohot"] = np.array(target_speed_twohot_seq)
+        # Optional stuff
+        if self.config.use_semantic:
+            data["semantic"] = np.array(loaded_semantics)
+        if self.config.use_bev_semantic:
+            data["bev_semantic"] = np.array(loaded_bev_semantics)
+        if self.config.use_depth:
+            data["depth"] = np.array(loaded_depth)
         if self.config.detect_boxes:
-            bounding_boxes, future_bounding_boxes = self.parse_bounding_boxes(
-                loaded_boxes[self.config.seq_len - 1],
-                loaded_future_boxes[self.config.seq_len - 1],
-                y_augmentation=aug_translation,
-                yaw_augmentation=aug_rotation,
-            )
-
-            # Pad bounding boxes to a fixed number
-            bounding_boxes = np.array(bounding_boxes)
-            bounding_boxes_padded = np.zeros(
-                (self.config.max_num_bbs, 8), dtype=np.float32
-            )
-
+            data["bounding_boxes"] = np.array(loaded_boxes)
             if self.config.use_plant:
-                future_bounding_boxes = np.array(future_bounding_boxes)
-                future_bounding_boxes_padded = (
-                    np.ones((self.config.max_num_bbs, 8), dtype=np.int32)
-                    * self.config.ignore_index
-                )
+                data["future_bounding_boxes"] = np.array(loaded_future_boxes)
+            data["center_heatmap"] = np.array([t["center_heatmap_target"] for t in box_targets])
+            data["wh"] = np.array([t["wh_target"] for t in box_targets])
+            data["yaw_class"] = np.array([t["yaw_class_target"] for t in box_targets])
+            data["yaw_res"] = np.array([t["yaw_res_target"] for t in box_targets])
+            data["offset"] = np.array([t["offset_target"] for t in box_targets])
+            data["velocity"] = np.array([t["velocity_target"] for t in box_targets])
+            data["brake_target"] = np.array([t["brake_target"] for t in box_targets])
+            data["pixel_weight"] = np.array([t["pixel_weight"] for t in box_targets])
+            data["avg_factor"] = np.array(avg_factors)
 
-            if bounding_boxes.shape[0] > 0:
-                if bounding_boxes.shape[0] <= self.config.max_num_bbs:
-                    bounding_boxes_padded[: bounding_boxes.shape[0], :] = bounding_boxes
-                    if self.config.use_plant:
-                        future_bounding_boxes_padded[
-                            : future_bounding_boxes.shape[0], :
-                        ] = future_bounding_boxes
-                else:
-                    bounding_boxes_padded[: self.config.max_num_bbs, :] = (
-                        bounding_boxes[: self.config.max_num_bbs]
-                    )
-                    if self.config.use_plant:
-                        future_bounding_boxes_padded[: self.config.max_num_bbs, :] = (
-                            future_bounding_boxes[: self.config.max_num_bbs]
-                        )
+        # The rest can be handled by this simple one-liner
+        #   dict of lists, like what a data loader does to batches
+        measurement_seq = loaded_measurements[:self.config.seq_len]
+        meas_dict_seq = {
+            k: np.array(
+                [d[k] for d in measurement_seq]  # val is list of vals of all dicts at that key
+            ) for k in measurement_seq[0]  # keys of sample dict (assumes all same keys)
+        }
+        data["steer"] = meas_dict_seq["steer"]
+        data["throttle"] = meas_dict_seq["throttle"]
+        data["light"] = meas_dict_seq["light_hazard"]
+        data["stop_sign"] = meas_dict_seq["stop_sign_hazard"]
+        data["junction"] = meas_dict_seq["junction"]
+        data["speed"] = meas_dict_seq["speed"]
+        data["theta"] = meas_dict_seq["theta"]
+        # Command one hot list comprehension
+        data["command"] = np.array(
+            [t_u.command_to_one_hot(cmd) for cmd in meas_dict_seq["command"]]
+        )
+        data["next_command"] = np.array(
+            [t_u.command_to_one_hot(cmd) for cmd in meas_dict_seq["next_command"]]
+        )
 
-            # print(bounding_boxes)
-            target_result, avg_factor = self.get_targets(
-                bounding_boxes,
-                self.config.lidar_resolution_height
-                // self.config.bev_down_sample_factor,
-                self.config.lidar_resolution_width
-                // self.config.bev_down_sample_factor,
+        # # Load temporal images
+        # loaded_temporal_images = []
+        # if self.config.img_seq_len > 1:
+        #     # Temporal data just for LiDAR
+        #     for i in range(self.config.img_seq_len):
+        #         temporal_image_i = self._load_jpg(
+        #             str(self.temporal_images[i], encoding="utf-8")
+        #         )
+        #         if self.config.use_color_aug:
+        #             processed_image = self.image_augmenter_func(
+        #                 image=temporal_image_i
+        #             )
+        #         loaded_temporal_images.append(processed_image)
+
+        #     loaded_temporal_images.reverse()
+        #     temporal_image = np.array(loaded_temporal_images)
+        #     # TODO need to apply augments
+        #     data["temporal_rgb"] = np.transpose(temporal_image, (0, 3, 1, 2))
+
+        # need to concatenate seq data here and align to the same coordinate
+        # lidars = []
+        # for i in range(self.config.seq_len):
+        #     lidar = loaded_lidars[i]
+
+        #     # transform lidar to lidar seq-1
+        #     lidar = self.align(
+        #         lidar,
+        #         loaded_measurements[i],
+        #         current_measurement,
+        #         y_augmentation=aug_translation,
+        #         yaw_augmentation=aug_rotation,
+        #     )
+        #     lidar_bev = self.lidar_to_histogram_features(
+        #         lidar, use_ground_plane=self.config.use_ground_plane
+        #     )
+        #     lidars.append(lidar_bev)
+        # lidar_bev = np.concatenate(lidars, axis=0)
+
+        # Load temporal lidars
+        # if self.config.lidar_seq_len > 1:
+        #     temporal_lidars = []
+        #     for i in range(self.config.lidar_seq_len):
+        #         # transform lidar to lidar seq-1
+        #         if self.config.realign_lidar:
+        #             temporal_lidar = self.align(
+        #                 loaded_temporal_lidars[i],
+        #                 loaded_temporal_measurements[i],
+        #                 loaded_temporal_measurements[self.config.lidar_seq_len - 1],
+        #                 y_augmentation=aug_translation,
+        #                 yaw_augmentation=aug_rotation,
+        #             )
+        #         else:
+        #             # For data augmentation to still occur.
+        #             temporal_lidar = self.align(
+        #                 loaded_temporal_lidars[i],
+        #                 loaded_temporal_measurements[i],
+        #                 loaded_temporal_measurements[i],
+        #                 y_augmentation=aug_translation,
+        #                 yaw_augmentation=aug_rotation,
+        #             )
+        #         temporal_lidar = self.lidar_to_histogram_features(
+        #             temporal_lidar, use_ground_plane=self.config.use_ground_plane
+        #         )
+        #         temporal_lidars.append(temporal_lidar)
+
+        #     temporal_lidar_bev = np.concatenate(temporal_lidars, axis=0)
+        #     temporal_lidar_bev = self.lidar_augmenter_func(
+        #         image=np.transpose(temporal_lidar_bev, (1, 2, 0))
+        #     )
+        #     data["temporal_lidar"] = np.transpose(temporal_lidar_bev, (2, 0, 1))
+
+        # if self.config.use_wp_gru:
+        #     # TODO we can ignore this
+        #     waypoints = self.get_waypoints(
+        #         loaded_measurements[self.config.seq_len - 1 :],
+        #         y_augmentation=aug_translation,
+        #         yaw_augmentation=aug_rotation,
+        #     )
+
+        #     data["ego_waypoints"] = np.array(waypoints)
+                
+        # Finally, if seq==1, remove the seq dimension
+        if self.config.seq_len == 1:
+            data = {k: v.squeeze(0) for k, v in data.items()}
+
+        return data
+
+    def _process_image(self, image_array: np.ndarray) -> np.ndarray:
+        if self.config.use_color_aug:
+            image_array =  self.image_augmenter_func(
+                image=image_array
             )
-            data["center_heatmap"] = target_result["center_heatmap_target"]
-            data["wh"] = target_result["wh_target"]
-            data["yaw_class"] = target_result["yaw_class_target"]
-            data["yaw_res"] = target_result["yaw_res_target"]
-            data["offset"] = target_result["offset_target"]
-            data["velocity"] = target_result["velocity_target"]
-            data["brake_target"] = target_result["brake_target"]
-            data["pixel_weight"] = target_result["pixel_weight"]
-            data["avg_factor"] = avg_factor
+        image_array = np.transpose(image_array, (2, 0, 1))
+        return image_array
 
-        else:
-            bounding_boxes_padded = None
-            future_bounding_boxes_padded = None
-
-        if self.config.use_wp_gru:
-            waypoints = self.get_waypoints(
-                loaded_measurements[self.config.seq_len - 1 :],
-                y_augmentation=aug_translation,
-                yaw_augmentation=aug_rotation,
+    def _process_semantics(self, semantics_array: np.ndarray) -> np.ndarray:
+        semantics_array = self.converter[semantics_array]
+        semantics_array = semantics_array[
+            :: self.config.perspective_downsample_factor,
+            :: self.config.perspective_downsample_factor,
+        ]
+        return semantics_array
+    
+    def _process_bev_semantics(self, bev_array: np.ndarray) -> np.ndarray:
+        # NOTE the BEV label can unfortunately only be saved up to 2.0 ppm resolution. We upscale it here.
+        # If you change these values you might need to change the up-scaling as well.
+        assert self.config.pixels_per_meter == 4.0
+        assert self.config.pixels_per_meter_collection == 2.0
+        assert self.config.lidar_resolution_width == 256
+        assert self.config.lidar_resolution_height == 256
+        assert self.config.max_x == 32
+        assert self.config.min_x == -32
+        if self.config.pixels_per_meter == 4.0:
+            # Downsample BEV
+            bev_array = (
+                bev_array[64:192, 64:192]
+                .repeat(2, axis=0)
+                .repeat(2, axis=1)
             )
+        bev_array = self.bev_converter[bev_array]
+        return bev_array
 
-            data["ego_waypoints"] = np.array(waypoints)
-
-        # Convert target speed to indexes
-        brake = current_measurement["brake"]
-
-        target_speed_index, angle_index = self.get_indices_speed_angle(
-            target_speed=current_measurement["target_speed"],
-            brake=brake,
-            angle=current_measurement["angle"],
+    def _process_depth(self, depth_array: np.ndarray) -> np.ndarray:
+        depth_array = (depth_array.astype(np.float32) / 255.0)
+        depth_array = cv2.resize(
+            depth_array,
+            dsize=(
+                depth_array.shape[1] // self.config.perspective_downsample_factor,
+                depth_array.shape[0] // self.config.perspective_downsample_factor,
+            ),
+            interpolation=cv2.INTER_LINEAR,
         )
-        target_speed_twohot = self.get_two_hot_encoding(
-            current_measurement["target_speed"], self.config.target_speeds, brake
-        )
+        return depth_array
 
-        data["brake"] = brake
-        data["angle_index"] = angle_index
-
-        data["target_speed"] = target_speed_index
-        data["target_speed_twohot"] = target_speed_twohot
-
-        lidar_bev = self.lidar_augmenter_func(
-            image=np.transpose(lidar_bev, (1, 2, 0))
-        )
-        data["lidar"] = np.transpose(lidar_bev, (2, 0, 1))
-
-        if self.config.detect_boxes:
-            data["bounding_boxes"] = bounding_boxes_padded
-            if self.config.use_plant:
-                data["future_bounding_boxes"] = future_bounding_boxes_padded
-
-        if self.config.lidar_seq_len > 1:
-            temporal_lidar_bev = self.lidar_augmenter_func(
-                image=np.transpose(temporal_lidar_bev, (1, 2, 0))
-            )
-            data["temporal_lidar"] = np.transpose(temporal_lidar_bev, (2, 0, 1))
-
-        data["steer"] = current_measurement["steer"]
-        data["throttle"] = current_measurement["throttle"]
-        data["light"] = current_measurement["light_hazard"]
-        data["stop_sign"] = current_measurement["stop_sign_hazard"]
-        data["junction"] = current_measurement["junction"]
-        data["speed"] = current_measurement["speed"]
-        data["theta"] = current_measurement["theta"]
-        data["command"] = t_u.command_to_one_hot(current_measurement["command"])
-        data["next_command"] = t_u.command_to_one_hot(
-            current_measurement["next_command"]
-        )
-
-        route = current_measurement["route"]
-        if len(route) < self.config.num_route_points:
-            num_missing = self.config.num_route_points - len(route)
-            route = np.array(route)
-            # Fill the empty spots by repeating the last point.
-            route = np.vstack((route, np.tile(route[-1], (num_missing, 1))))
-        else:
-            route = np.array(route[: self.config.num_route_points])
-
-        route = self.augment_route(
-            route, y_augmentation=aug_translation, yaw_augmentation=aug_rotation
-        )
-        if self.config.smooth_route:
-            data["route"] = self.smooth_path(route)
-        else:
-            data["route"] = route
-
-        target_point = np.array(current_measurement["target_point"])
-        target_point = self.augment_target_point(
-            target_point, y_augmentation=aug_translation, yaw_augmentation=aug_rotation
-        )
-        data["target_point"] = target_point
-
-        # also load the next target point
-        target_point_next = np.array(current_measurement["target_point_next"])
-        target_point_next = self.augment_target_point(
-            target_point_next,
+    def _process_boxes(self, boxes_i, future_boxes_i, aug_translation, aug_rotation):
+        bounding_boxes, future_bounding_boxes = self.parse_bounding_boxes(
+            boxes_i,
+            future_boxes_i,
             y_augmentation=aug_translation,
             yaw_augmentation=aug_rotation,
         )
-        data["target_point_next"] = target_point_next
 
-        return data
+        # Pad bounding boxes to a fixed number
+        bounding_boxes = np.array(bounding_boxes)
+        bounding_boxes_padded = np.zeros(
+            (self.config.max_num_bbs, 8), dtype=np.float32
+        )
+
+        if self.config.use_plant:
+            future_bounding_boxes = np.array(future_bounding_boxes)
+            future_bounding_boxes_padded = (
+                np.ones((self.config.max_num_bbs, 8), dtype=np.int32)
+                * self.config.ignore_index
+            )
+
+        if bounding_boxes.shape[0] > 0:
+            if bounding_boxes.shape[0] <= self.config.max_num_bbs:
+                bounding_boxes_padded[: bounding_boxes.shape[0], :] = bounding_boxes
+                if self.config.use_plant:
+                    future_bounding_boxes_padded[
+                        : future_bounding_boxes.shape[0], :
+                    ] = future_bounding_boxes
+            else:
+                bounding_boxes_padded[: self.config.max_num_bbs, :] = (
+                    bounding_boxes[: self.config.max_num_bbs]
+                )
+                if self.config.use_plant:
+                    future_bounding_boxes_padded[: self.config.max_num_bbs, :] = (
+                        future_bounding_boxes[: self.config.max_num_bbs]
+                    )
+        return bounding_boxes, future_bounding_boxes
 
     def _is_valid_route(self, route_dir: Union[os.PathLike, str]) -> bool:
         """
@@ -1431,14 +1441,14 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
         return lidars_i
 
     def _load_jpg(self, path: Union[str, os.PathLike]) -> np.ndarray:
-        "Used for load images"
+        "Used for loading images"
         image_i = cv2.imread(path, cv2.IMREAD_COLOR)
         image_i = cv2.cvtColor(image_i, cv2.COLOR_BGR2RGB)
         image_i = t_u.crop_array(self.config, image_i)
         return image_i
 
     def _load_png(self, path: Union[str, os.PathLike], crop: bool = True) -> np.ndarray:
-        "Used for load semantics, bev_semantics and depth"
+        "Used for loading semantics, bev_semantics and depth"
         image_i = cv2.imread(path, cv2.IMREAD_UNCHANGED)
         if crop:
             image_i = t_u.crop_array(self.config, image_i)
@@ -1911,9 +1921,10 @@ if __name__ == "__main__":
     from config import GlobalConfig
 
     config = GlobalConfig()
+    config.seq_len = 2
     config.initialize(
         root_dir=[
-            "/cluster/work/andrebw/repos/temporal_garage/results/data/garage_v2_2025_03_21/data"
+            "/cluster/work/andrebw/repos/temporal_garage/results/data/garage_v2_2025_03_15/data"
         ]
     )
     dataset = CARLA_Data(
@@ -1922,4 +1933,13 @@ if __name__ == "__main__":
         estimate_class_distributions=config.estimate_class_distributions,
         estimate_sem_distribution=config.estimate_semantic_distribution,
     )
-    print(dataset.__getitem__(5).keys())
+    sample = dataset.__getitem__(5)
+    print("\nShapes:")
+    for k, v in sample.items():
+        if isinstance(v, np.ndarray):
+            if v.shape == np.array(0).shape:
+                print(f"'{k}': {v} ({v.dtype})")
+            else:
+                print(f"'{k}': shape[{v.shape}]")
+    print()
+    print(sample.keys())
