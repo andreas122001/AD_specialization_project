@@ -372,11 +372,13 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
         boxes = self.boxes[index]
         future_boxes = self.future_boxes[index]
 
-        # if self.config.img_seq_len > 1:
-        #     temporal_images = self.temporal_images[index]
-        # if self.config.lidar_seq_len > 1:
-        #     temporal_lidars = self.temporal_lidars[index]
-        #     temporal_measurements = self.temporal_measurements[index]
+        if self.config.img_seq_len > 1:
+            assert self.config.seq_len == 1, "img_seq_len>1 can only be used with seq_len=1"
+            temporal_images = self.temporal_images[index]
+        if self.config.lidar_seq_len > 1:
+            assert self.config.seq_len == 1, "lidar_seq_len>1 can only be used with seq_len=1"
+            temporal_lidars = self.temporal_lidars[index]
+            temporal_measurements = self.temporal_measurements[index]
         
         # we need to calculate the paths, since they are too large to put in the index
         measurement_root = self.measurements[index][0]
@@ -403,23 +405,23 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
                 loaded_measurements.append(measurements_i)
 
 
-        # loaded_temporal_lidars = []
-        # loaded_temporal_measurements = []
-        # if self.config.lidar_seq_len > 1:
-        #     # Temporal data just for LiDAR
-        #     for i in range(self.config.lidar_seq_len):
-        #         temporal_measurements_i = self._load_json_gz(
-        #             temporal_measurements[i]
-        #         )
-        #         temporal_lidars_i = self._load_lidar(
-        #             str(temporal_lidars[i], encoding="utf-8")
-        #         )
+        loaded_temporal_lidars = []
+        loaded_temporal_measurements = []
+        if self.config.lidar_seq_len > 1:
+            # Temporal data just for LiDAR
+            for i in range(self.config.lidar_seq_len):
+                temporal_measurements_i = self._load_json_gz(
+                    temporal_measurements[i]
+                )
+                temporal_lidars_i = self._load_lidar(
+                    str(temporal_lidars[i], encoding="utf-8")
+                )
 
-        #         loaded_temporal_lidars.append(temporal_lidars_i)
-        #         loaded_temporal_measurements.append(temporal_measurements_i)
+                loaded_temporal_lidars.append(temporal_lidars_i)
+                loaded_temporal_measurements.append(temporal_measurements_i)
 
-        #     loaded_temporal_lidars.reverse()
-        #     loaded_temporal_measurements.reverse()
+            loaded_temporal_lidars.reverse()
+            loaded_temporal_measurements.reverse()
 
         # Here we load all inputs as sequences of frames
         # This would allow a model to process the data sequentially if seq_len > 1
@@ -459,7 +461,7 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
 
         # Load and process all frames
         for idx in range(self.config.seq_len):
-            measurement_i = loaded_measurements[i]
+            measurement_i = loaded_measurements[idx]
 
             # Determine whether the augmented camera or the normal camera is used.
             if (
@@ -530,7 +532,6 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
 
             # Because the strings are stored as numpy byte objects we need to
             # convert them back to utf-8 strings
-            lidar_path = str(lidars[idx], encoding="utf-8")
 
             image_i = self._process_image(
                 self._load_jpg(images_path)
@@ -552,11 +553,11 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
             if self.config.detect_boxes:
                 boxes_i = future_boxes_i = None
 
-                box_path = str(boxes[i], encoding="utf-8")
+                box_path = str(boxes[idx], encoding="utf-8")
                 boxes_i = self._load_json_gz(box_path)
 
                 if self.config.use_plant:
-                    future_box_path = str(future_boxes[i], encoding="utf-8")
+                    future_box_path = str(future_boxes[idx], encoding="utf-8")
                     future_boxes_i = self._load_json_gz(
                         future_box_path
                     )
@@ -580,6 +581,8 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
                 avg_factors.append(avg_factor)
 
             # Load and align lidar
+            # need to concatenate seq data here and align to the same coordinate
+            lidar_path = str(lidars[idx], encoding="utf-8")
             lidar = self._load_lidar(lidar_path)
             # transform lidar to lidar seq-1
             lidar = self.align(  # TODO: should we align to each time step?
@@ -653,76 +656,55 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
             [t_u.command_to_one_hot(cmd) for cmd in meas_dict_seq["next_command"]]
         )
 
-        # # Load temporal images
-        # loaded_temporal_images = []
-        # if self.config.img_seq_len > 1:
-        #     # Temporal data just for LiDAR
-        #     for i in range(self.config.img_seq_len):
-        #         temporal_image_i = self._load_jpg(
-        #             str(self.temporal_images[i], encoding="utf-8")
-        #         )
-        #         if self.config.use_color_aug:
-        #             processed_image = self.image_augmenter_func(
-        #                 image=temporal_image_i
-        #             )
-        #         loaded_temporal_images.append(processed_image)
+        # Load temporal images
+        loaded_temporal_images = []
+        if self.config.img_seq_len > 1:
+            # TODO: does it make sense to apply agumentations here? 
+            # Temporal data just for LiDAR
+            for i in range(self.config.img_seq_len):
+                img_path = str(temporal_images[i], encoding="utf-8")
+                temporal_image_i = self._process_image(self._load_jpg(img_path))
+                loaded_temporal_images.append(temporal_image_i)
 
-        #     loaded_temporal_images.reverse()
-        #     temporal_image = np.array(loaded_temporal_images)
-        #     # TODO need to apply augments
-        #     data["temporal_rgb"] = np.transpose(temporal_image, (0, 3, 1, 2))
-
-        # need to concatenate seq data here and align to the same coordinate
-        # lidars = []
-        # for i in range(self.config.seq_len):
-        #     lidar = loaded_lidars[i]
-
-        #     # transform lidar to lidar seq-1
-        #     lidar = self.align(
-        #         lidar,
-        #         loaded_measurements[i],
-        #         current_measurement,
-        #         y_augmentation=aug_translation,
-        #         yaw_augmentation=aug_rotation,
-        #     )
-        #     lidar_bev = self.lidar_to_histogram_features(
-        #         lidar, use_ground_plane=self.config.use_ground_plane
-        #     )
-        #     lidars.append(lidar_bev)
-        # lidar_bev = np.concatenate(lidars, axis=0)
+            loaded_temporal_images.reverse()
+            data["temporal_rgb"] = np.array(loaded_temporal_images)
 
         # Load temporal lidars
-        # if self.config.lidar_seq_len > 1:
-        #     temporal_lidars = []
-        #     for i in range(self.config.lidar_seq_len):
-        #         # transform lidar to lidar seq-1
-        #         if self.config.realign_lidar:
-        #             temporal_lidar = self.align(
-        #                 loaded_temporal_lidars[i],
-        #                 loaded_temporal_measurements[i],
-        #                 loaded_temporal_measurements[self.config.lidar_seq_len - 1],
-        #                 y_augmentation=aug_translation,
-        #                 yaw_augmentation=aug_rotation,
-        #             )
-        #         else:
-        #             # For data augmentation to still occur.
-        #             temporal_lidar = self.align(
-        #                 loaded_temporal_lidars[i],
-        #                 loaded_temporal_measurements[i],
-        #                 loaded_temporal_measurements[i],
-        #                 y_augmentation=aug_translation,
-        #                 yaw_augmentation=aug_rotation,
-        #             )
-        #         temporal_lidar = self.lidar_to_histogram_features(
-        #             temporal_lidar, use_ground_plane=self.config.use_ground_plane
-        #         )
-        #         temporal_lidars.append(temporal_lidar)
+        if self.config.lidar_seq_len > 1:
+            temporal_lidars = []
+            for i in range(self.config.lidar_seq_len):
+                # transform lidar to lidar seq-1
+                if self.config.realign_lidar:
+                    temporal_lidar = self.align(
+                        loaded_temporal_lidars[i],
+                        loaded_temporal_measurements[i],
+                        loaded_temporal_measurements[self.config.lidar_seq_len - 1],
+                        # This is cheat, the augs are retained outside the local scope (because python)
+                        # We know that this is the correct aug since we only have one aug with lidar_seq_len > 1. 
+                        # It is not pretty, however, and should be fixed (TODO)
+                        y_augmentation=aug_translation,
+                        yaw_augmentation=aug_rotation,
+                    )
+                else:
+                    # For data augmentation to still occur.
+                    temporal_lidar = self.align(
+                        loaded_temporal_lidars[i],
+                        loaded_temporal_measurements[i],
+                        loaded_temporal_measurements[i],
+                        # Same here (TODO)
+                        y_augmentation=aug_translation,
+                        yaw_augmentation=aug_rotation,
+                    )
+                temporal_lidar = self.lidar_to_histogram_features(
+                    temporal_lidar, use_ground_plane=self.config.use_ground_plane
+                )
+                temporal_lidars.append(temporal_lidar)
 
-        #     temporal_lidar_bev = np.concatenate(temporal_lidars, axis=0)
-        #     temporal_lidar_bev = self.lidar_augmenter_func(
-        #         image=np.transpose(temporal_lidar_bev, (1, 2, 0))
-        #     )
-        #     data["temporal_lidar"] = np.transpose(temporal_lidar_bev, (2, 0, 1))
+            temporal_lidar_bev = np.concatenate(temporal_lidars, axis=0)
+            temporal_lidar_bev = self.lidar_augmenter_func(
+                image=np.transpose(temporal_lidar_bev, (1, 2, 0))
+            )
+            data["temporal_lidar"] = np.transpose(temporal_lidar_bev, (2, 0, 1))
 
         # if self.config.use_wp_gru:
         #     # TODO we can ignore this
@@ -736,7 +718,11 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
                 
         # Finally, if seq==1, remove the seq dimension
         if self.config.seq_len == 1:
-            data = {k: v.squeeze(0) for k, v in data.items()}
+            data = {
+                k: v.squeeze(0) 
+                if k not in ["temporal_lidar", "temporal_rgb"] 
+                else v for k, v in data.items()
+            }
 
         return data
 
@@ -1921,7 +1907,9 @@ if __name__ == "__main__":
     from config import GlobalConfig
 
     config = GlobalConfig()
-    config.seq_len = 2
+    config.seq_len = 1
+    config.lidar_seq_len = 1
+    config.img_seq_len = 1
     config.initialize(
         root_dir=[
             "/cluster/work/andrebw/repos/temporal_garage/results/data/garage_v2_2025_03_15/data"
