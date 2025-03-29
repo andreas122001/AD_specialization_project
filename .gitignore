@@ -1,6 +1,7 @@
 carla
 carla/**
 team_code/checkpoints
+data/**
 
 /Scenario_Logs/
 /ros-bridge/
