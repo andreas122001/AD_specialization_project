@@ -108,7 +108,7 @@ def make_jobsub_file(commands, job_number, exp_name, exp_root_name, partition):
     qsub_template = f"""#!/bin/bash
 #SBATCH --job-name={exp_name}{job_number}
 #SBATCH --partition={partition}
-#SBATCH --account=share-ie-idi
+#SBATCH --account=ie-idi
 #SBATCH -o evaluation/{exp_root_name}/{exp_name}/run_files/logs/qsub_out{job_number}.log
 #SBATCH -e evaluation/{exp_root_name}/{exp_name}/run_files/logs/qsub_out{job_number}.log
 #SBATCH --nodes=1

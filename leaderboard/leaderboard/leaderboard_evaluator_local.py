@@ -452,13 +452,13 @@ class LeaderboardEvaluator(object):
 
         return crashed
 
-    def compress_data(self):
+    def archive_data(self):
         data_path = os.environ["SAVE_PATH"] + "/"
         data_path += os.environ["TOWN"]
         data_path += "_Rep" + os.environ["REPETITION"]
         data_path += f"_{self.route_date_string}"
         if os.path.isdir(data_path):
-            cmd = f"tar -czf {data_path}.tar.gz {data_path} --remove-files"
+            cmd = f"tar -cf {data_path}.tar {data_path} --remove-files"
             print(f"{cmd}")
             os.system(cmd)
 
@@ -520,7 +520,7 @@ def main():
 
     import time
     time.sleep(2)
-    leaderboard_evaluator.compress_data()
+    # leaderboard_evaluator.archive_data()
     sys.exit(0)
 
 if __name__ == '__main__':

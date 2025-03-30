@@ -4,9 +4,12 @@ import numpy as np
 from tqdm import tqdm
 import ujson
 
-root = "/cluster/work/andrebw/repos/temporal_garage/results/data/garage_v2_2025_03_15/results"
+root = "/cluster/work/andrebw/repos/temporal_garage/results/data/garage_v2_2025_03_25/results"
 
 result_files = glob.glob(f"{root}/**/*_result.json", recursive=True)
+
+failed = 0
+success = 0
 
 # Scenarios
 results = {}
@@ -17,7 +20,12 @@ for result_path in tqdm(result_files):
     with open(result_path, "rt", encoding="utf-8") as f:
         results_route = ujson.load(f)
         if "scores_mean" not in results_route["_checkpoint"]["global_record"]:
+            failed += 1
             continue
+        if results_route["_checkpoint"]["global_record"]["status"] == "Failed":
+            failed += 1
+            continue
+        success += 1
         results[scenario].append(results_route["_checkpoint"]["global_record"]["scores_mean"])
 
 # Post-process 
@@ -57,9 +65,11 @@ results['Total'] = {
     },
 }
 
+print(f"Success: {success} / {success + failed}")
+print()
 
 from pathlib import Path
-save_path = "/cluster/work/andrebw/repos/temporal_garage/dataset_results.json"
+save_path = f"{root}/../dataset_results.json"
 print(Path(save_path))
 with open(save_path, "w") as f:
     ujson.dump(results, f, indent=4)

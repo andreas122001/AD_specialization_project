@@ -37,7 +37,7 @@ def make_bash(
     run_command = "python -u leaderboard/leaderboard/leaderboard_evaluator_local.py --port=${FREE_WORLD_PORT} \
         --traffic-manager-port=${TM_PORT} --traffic-manager-seed=${TM_SEED} --routes=${ROUTES} --repetitions=${REPETITIONS} \
             --track=${CHALLENGE_TRACK_CODENAME} --checkpoint=${CHECKPOINT_ENDPOINT} --agent=${TEAM_AGENT} \
-                --agent-config=${TEAM_CONFIG} --debug=0 --resume=${RESUME} --timeout=120"
+                --agent-config=${TEAM_CONFIG} --debug=0 --resume=${RESUME} --timeout=300"
 
     qsub_template = f"""#!/bin/bash
 export SCENARIO_RUNNER_ROOT={code_dir}/scenario_runner_autopilot
@@ -177,7 +177,7 @@ def make_jobsub_file(
     route_file_number,
     partition_name,
     repetition,
-    timeout="0-02:00:00",
+    timeout,
 ):
     os.makedirs(f"{data_save_root}/slurm/run_files/logs", exist_ok=True)
     os.makedirs(f"{data_save_root}/slurm/run_files/job_files", exist_ok=True)
@@ -242,7 +242,8 @@ if __name__ == "__main__":
     code_root = "/cluster/work/andrebw/repos/temporal_garage"
     carla_root = "/cluster/work/andrebw/repos/temporal_garage/carla"
     date = datetime.today().strftime("%Y_%m_%d")
-    dataset_name = "garage_v2_" + date
+    #dataset_name = "garage_v2_" + date
+    dataset_name = "garage_v2_2025_03_25"
     root_folder = r"results/data/"  # With ending slash
     data_save_directory = root_folder + dataset_name
     log_root = f"{data_save_directory}/slurm"
@@ -298,7 +299,7 @@ if __name__ == "__main__":
                 routefile_number,
                 partition,
                 repetition,
-                "0-02:00:00",
+                timeout="0-02:00:00",
             )
 
             # Wait until submitting new jobs that the #jobs are at below max

@@ -408,15 +408,15 @@ class GlobalConfig:
         # Dataloader
         # -----------------------------------------------------------------------------
         self.carla_fps = 20  # Simulator Frames per second
+        self.seq_step = 1  # (TODO implement) how many frames between each frame of a sequence of frames (when using frame sequences)
         self.seq_len = 1  # input timesteps
         # use different seq len for image and lidar
         self.img_seq_len = 1
         self.lidar_seq_len = 1
         # Number of initial frames to skip during data loading
-        self.skip_first = int(2.5 * self.carla_fps) // self.data_save_freq
-        self.pred_len = (
-            int(2.0 * self.carla_fps) // self.data_save_freq
-        )  # number of future waypoints predicted
+        self.skip_first = int(2.5 * self.carla_fps) // self.data_save_freq  # aka. 10
+        # Number of future waypoints predicted
+        self.pred_len = int(2.0 * self.carla_fps) // self.data_save_freq  # aka. 20
         # Width and height of the LiDAR grid that the point cloud is voxelized into.
         self.lidar_resolution_width = 256
         self.lidar_resolution_height = 256
@@ -526,8 +526,8 @@ class GlobalConfig:
         self.train_debug_save_freq = 1
         self.backbone = "transFuser"  # Vision backbone architecture used
         self.use_velocity = 1  # Whether to use the velocity as input to the network
-        self.image_architecture = "regnety_032"  # Image architecture used in the backbone resnet34, regnety_032
-        self.lidar_architecture = "regnety_032"  # LiDAR architecture used in the backbone resnet34, regnety_032
+        self.image_architecture = "regnety_032"  # Image architecture used in the backbone resnet34, regnety_032, video_resnet18, video_swin_tiny
+        self.lidar_architecture = "regnety_032"  # LiDAR architecture used in the backbone resnet34, regnety_032, video_resnet18, video_swin_tiny
         # Whether to classify target speeds and regress a path as output representation.
         self.use_controller_input_prediction = True
         # Whether to use the direct control predictions for driving
@@ -706,6 +706,10 @@ class GlobalConfig:
         # Resolution at which the BEV auxiliary tasks are predicted
         self.bev_down_sample_factor = 4
         self.bev_upsample_factor = 2
+
+        # Temporal fusion
+        self.use_temporal_fusion = False  # TODO implement
+        self.backprop_every_step = False  # TODO implement
 
         # GPT Encoder
         self.block_exp = 4
