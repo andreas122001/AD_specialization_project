@@ -78,9 +78,93 @@ Hint: make the default value of the epochs parameter a list instead of a tuple, 
 + default=["model_0030"],
 ```
 
+## Notes for data collection with PDM-Lite
+
+Hint: DO NOT add the normal exports to your .bashrc. Since dataset collection and evaluation uses two different leaderboard_evaluator repositories, adding the export to .bashrc will make data collection fail because the scenario runner is lacking some methods that the data_agent is using.
+
 
 ## Possible cleanups
 
 In `model.py`:
 1. Separate forward into two methods, and select in __init__ by which backbone is used to avoid the control flow. There is more control flow other places though.
+
+
+## Changes
+
+### The dataset
+
+To facilitate the experments of this thesis, the dataset was changed to support the addition of a sequence dimension to the sensor data. Functionality for this already existed in part in the original implementation.
+
+Simplified the code in __init__() by breaking up into smaller functions:
+```python
+def _is_valid_route(self, route_dir) -> bool:
+    """
+    Returns True if the route meets the success conditions (perfect score, not failed, etc.)
+    """
+```
+
+### config.py
+
+Added 
+```diff
++ # Temporal fusion
++ self.use_temporal_fusion = True
++ self.use_recurrent_dataset = True
+# if we do backprop every step, the labels also need to be a sequence
++ self.backprop_every_step = True  
+...
+
+# Dataloader
+# -----------------------------------------------------------------------------
+self.carla_fps = 20  # Simulator Frames per second
++ self.seq_step = 1  # how many frames between each frame of a sequence of frames (when using frame sequences)
++ self.seq_len = 2  # input timesteps
+- self.seq_len = 1  # input timesteps
+# use different seq len for image and lidar
+self.img_seq_len = 1
+self.lidar_seq_len = 1
+```
+
+
+### Fixing lidar_video mode for TransFuser backbone 
+
+The positional embedding has the wrong number of tokens compared to the (lidar+rgb) feature tokens for the video architectures. To fix it, set the lidar_time_frames in TransfuserBackbone.\_\_init\_\_:
+
+```diff
+if config.lidar_architecture == "video_resnet18":
+    self.lidar_encoder = VideoResNet(
+        in_channels=1 + int(config.use_ground_plane), pretrained=False
+    )
+    self.global_pool_lidar = nn.AdaptiveAvgPool3d(output_size=1)
+    self.avgpool_lidar = nn.AdaptiveAvgPool3d(
+        (None, self.config.lidar_vert_anchors, self.config.lidar_horz_anchors)
+    )
++   lidar_time_frames = [
++       config.lidar_seq_len,
++       max(1, (config.lidar_seq_len + 1) // 2),
++       max(1, (config.lidar_seq_len + 3) // 4),
++       max(1, (config.lidar_seq_len + 7) // 8),
++   ]
+-   lidar_time_frames = [config.lidar_seq_len, 3, 2, 1]
+
+elif config.lidar_architecture == "video_swin_tiny":
+    self.lidar_encoder = SwinTransformer3D(
+        pretrained=False,
+        pretrained2d=False,
+        in_chans=1 + int(config.use_ground_plane),
+    )
+    self.global_pool_lidar = nn.AdaptiveAvgPool3d(output_size=1)
+    self.avgpool_lidar = nn.AdaptiveAvgPool3d(
+        (None, self.config.lidar_vert_anchors, self.config.lidar_horz_anchors)
+    )
++   lidar_time_frames = [
++       config.lidar_seq_len - 1,
++       config.lidar_seq_len - 1,
++       config.lidar_seq_len - 1,
++       config.lidar_seq_len - 1,
++   ]
+-   lidar_time_frames = [3, 3, 3, 3]
+```
+
+*NOTE*: this only fixes it so that the shapes fit together (found by just testing different values and seeing how the token lengths change), but I am not completely sure that this does not affect anything else.
 
