@@ -408,11 +408,13 @@ class GlobalConfig:
         # Dataloader
         # -----------------------------------------------------------------------------
         self.carla_fps = 20  # Simulator Frames per second
-        self.seq_step = 1  # (TODO implement) how many frames between each frame of a sequence of frames (when using frame sequences)
         self.seq_len = 1  # input timesteps
+        self.seq_step = 1  # how many frames between each frame of a sequence of frames (when using data sequences)
         # use different seq len for image and lidar
         self.img_seq_len = 1
+        self.img_step_size = 1  # how many frames between each frame of a sequence of frames (when using image sequences)
         self.lidar_seq_len = 1
+        self.lidar_step_size = 1  # how many frames between each frame of a sequence of frames (when using lidar sequences)
         # Number of initial frames to skip during data loading
         self.skip_first = int(2.5 * self.carla_fps) // self.data_save_freq  # aka. 10
         # Number of future waypoints predicted

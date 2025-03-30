@@ -22,7 +22,7 @@ import pickle
 import re
 
 
-class CARLA_Data_orig(Dataset):  # pylint: disable=locally-disabled, invalid-name
+class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
   """
     Custom dataset that dynamically loads a CARLA dataset from disk.
     """

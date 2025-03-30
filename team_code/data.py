@@ -4,6 +4,7 @@ Code that loads the dataset for training.
 
 import os
 from typing import Optional, Union
+import warnings
 import ujson
 import numpy as np
 from torch.utils.data import Dataset
@@ -42,8 +43,6 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
     ) -> None:
         self.config = config
         self.validation = validation
-        # TODO: implement image sequence
-        # assert config.img_seq_len == 1
 
         self.data_cache = shared_dict
         self.target_speed_bins = np.array(config.target_speed_bins)
@@ -90,21 +89,12 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
             # list subdirectories in root
             routes = next(os.walk(sub_root))[1]
 
-            for route in routes:  # loop over individual routes within this scenario folder
+            for (
+                route
+            ) in routes:  # loop over individual routes within this scenario folder
                 total_routes += 1
                 route_dir = sub_root + "/" + route
                 lidar_dir = route_dir + "/lidar"
-                num_seq = len(
-                    os.listdir(lidar_dir)
-                )  # How many frames recorded for the current route
-
-                # If we are using checkpoints to predict the path, we can use all of the frames, otherwise we need to subtract
-                # pred_len so that we have enough waypoint labels
-                last_frame = (
-                    num_seq
-                    - (self.config.seq_len - 1) * self.config.seq_step
-                    - (0 if not self.config.use_wp_gru else self.config.pred_len)
-                )
 
                 # Skip repetitions we are not using
                 repetition = int(re.search("_Rep(\\d+)", route).group(1))
@@ -122,10 +112,35 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
                 if not self._is_valid_route(route_dir):
                     skipped_routes += 1
                     continue
-                trainable_routes += 1
 
+                # Skip first frames so we can load them backward (for lidar and rgb len > skip_first)
+                # temporal rgb/lidar goes backward in time, while seq_len goes forward
+                first_frame = max(
+                    config.img_seq_len * config.img_step_size,
+                    config.lidar_seq_len * config.lidar_step_size,
+                    config.skip_first,
+                )
+
+                num_seq = len(
+                    os.listdir(lidar_dir)
+                )  # How many frames recorded for the current route
+
+                # If we are using checkpoints to predict the path, we can use all of the frames, otherwise we need to subtract
+                # pred_len so that we have enough waypoint labels
+                last_frame = (
+                    num_seq
+                    - (self.config.seq_len - 1) * self.config.seq_step
+                    - (0 if not self.config.use_wp_gru else self.config.pred_len)
+                )
+
+                if last_frame <= first_frame:
+                    warnings.warn(f"Not enough frames in {route_dir} for given sequence length {config.seq_len} and step {config.seq_step}, skipping route")
+                    skipped_routes += 1
+                    continue
+
+                trainable_routes += 1
                 # For all frames of the route (that we want to load)
-                for seq in range(config.skip_first, last_frame):
+                for seq in range(first_frame, last_frame):
                     if seq % config.train_sampling_rate != 0:
                         continue
 
@@ -144,15 +159,15 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
                     measurement = []
 
                     # Load sequence of frames (according to config.seq_len)
-                    for idx in range(self.config.seq_len):
+                    for idx in range(
+                        0,
+                        self.config.seq_len * self.config.seq_step,
+                        self.config.seq_step,
+                    ):
 
-                        image.append(
-                            route_dir + "/rgb" + (f"/{(seq + idx):04}.jpg")
-                        )
+                        image.append(route_dir + "/rgb" + (f"/{(seq + idx):04}.jpg"))
                         image_augmented.append(
-                            route_dir
-                            + "/rgb_augmented"
-                            + (f"/{(seq + idx):04}.jpg")
+                            route_dir + "/rgb_augmented" + (f"/{(seq + idx):04}.jpg")
                         )
                         semantic.append(
                             route_dir + "/semantics" + (f"/{(seq + idx):04}.png")
@@ -163,26 +178,18 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
                             + (f"/{(seq + idx):04}.png")
                         )
                         bev_semantic.append(
-                            route_dir
-                            + "/bev_semantics"
-                            + (f"/{(seq + idx):04}.png")
+                            route_dir + "/bev_semantics" + (f"/{(seq + idx):04}.png")
                         )
                         bev_semantic_augmented.append(
                             route_dir
                             + "/bev_semantics_augmented"
                             + (f"/{(seq + idx):04}.png")
                         )
-                        depth.append(
-                            route_dir + "/depth" + (f"/{(seq + idx):04}.png")
-                        )
+                        depth.append(route_dir + "/depth" + (f"/{(seq + idx):04}.png"))
                         depth_augmented.append(
-                            route_dir
-                            + "/depth_augmented"
-                            + (f"/{(seq + idx):04}.png")
+                            route_dir + "/depth_augmented" + (f"/{(seq + idx):04}.png")
                         )
-                        lidar.append(
-                            route_dir + "/lidar" + (f"/{(seq + idx):04}.laz")
-                        )
+                        lidar.append(route_dir + "/lidar" + (f"/{(seq + idx):04}.laz"))
 
                         if estimate_sem_distribution:
                             semantics_i = self.converter[
@@ -207,8 +214,8 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
                             + (f"/{(seq + idx + forcast_step):04}.json.gz")
                         )
                         # measurement.append(
-                        #     route_dir + 
-                        #     "/measurements" 
+                        #     route_dir +
+                        #     "/measurements"
                         #     + f"/{(seq + idx + forcast_step):04}.json.gz"
                         # )
 
@@ -230,13 +237,16 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
                         self.angle_distribution.append(angle_index)
                         self.speed_distribution.append(target_speed_index)
                     if self.config.lidar_seq_len > 1:
+                        assert self.config.seq_len == 1
                         # load input seq and pred seq jointly
                         temporal_lidar = []
                         temporal_measurement = []
-                        for idx in range(self.config.lidar_seq_len):
-                            assert (
-                                self.config.seq_len == 1
-                            )  # Temporal LiDARs are only supported with seq len 1 right now
+                        for idx in range(
+                            0,
+                            self.config.lidar_seq_len * config.lidar_step_size,
+                            config.lidar_step_size,
+                        ):
+                            # Temporal LiDARs are only supported with seq len 1 right now
                             temporal_lidar.append(
                                 route_dir + "/lidar" + (f"/{(seq - idx):04}.laz")
                             )
@@ -252,10 +262,16 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
                     # Add temporal img index
                     if self.config.img_seq_len > 1:
                         assert self.config.seq_len == 1
-                        self.temporal_images.append([
-                            route_dir + "/rgb" + (f"/{(seq - idx):04}.jpg")
-                            for idx in range(self.config.img_seq_len)
-                        ])
+                        self.temporal_images.append(
+                            [
+                                route_dir + "/rgb" + (f"/{(seq - idx):04}.jpg")
+                                for idx in range(
+                                    0,
+                                    self.config.img_seq_len * config.img_step_size,
+                                    config.img_step_size,
+                                )
+                            ]
+                        )
 
                     self.images.append(image)
                     self.images_augmented.append(image_augmented)
@@ -373,13 +389,17 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
         future_boxes = self.future_boxes[index]
 
         if self.config.img_seq_len > 1:
-            assert self.config.seq_len == 1, "img_seq_len>1 can only be used with seq_len=1"
+            assert (
+                self.config.seq_len == 1
+            ), "img_seq_len>1 can only be used with seq_len=1"
             temporal_images = self.temporal_images[index]
         if self.config.lidar_seq_len > 1:
-            assert self.config.seq_len == 1, "lidar_seq_len>1 can only be used with seq_len=1"
+            assert (
+                self.config.seq_len == 1
+            ), "lidar_seq_len>1 can only be used with seq_len=1"
             temporal_lidars = self.temporal_lidars[index]
             temporal_measurements = self.temporal_measurements[index]
-        
+
         # we need to calculate the paths, since they are too large to put in the index
         measurement_root = self.measurements[index][0]
         sample_start = self.sample_start[index]
@@ -404,15 +424,12 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
                 measurements_i = self._load_json_gz(measurement_file)
                 loaded_measurements.append(measurements_i)
 
-
         loaded_temporal_lidars = []
         loaded_temporal_measurements = []
         if self.config.lidar_seq_len > 1:
             # Temporal data just for LiDAR
             for i in range(self.config.lidar_seq_len):
-                temporal_measurements_i = self._load_json_gz(
-                    temporal_measurements[i]
-                )
+                temporal_measurements_i = self._load_json_gz(temporal_measurements[i])
                 temporal_lidars_i = self._load_lidar(
                     str(temporal_lidars[i], encoding="utf-8")
                 )
@@ -443,7 +460,7 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
         target_point_seq = []
         target_point_next_seq = []
         route_seq = []
-        
+
         brake_seq = []
         angle_index_seq = []
         target_speed_seq = []
@@ -451,8 +468,8 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
 
         # For lidar alignment, we need the current frame
         # TODO: but what is "current" if temporal frames are processed independently?
-        current_measurement = loaded_measurements[self.config.seq_len - 1]  # last 
-        # TODO: 
+        current_measurement = loaded_measurements[self.config.seq_len - 1]  # last
+        # TODO:
         #   maybe ralignment should be turned off if we use a sequence?
         #   It kinda only makes sense if we input the whole sequence to the model
         #   Like early temporal fusion
@@ -482,20 +499,20 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
                 semantics_path = str(semantics[idx], encoding="utf-8")
                 bev_semantics_path = str(bev_semantics[idx], encoding="utf-8")
                 depth_path = str(depth[idx], encoding="utf-8")
-            
+
             # Augment target points
             target_point = self.augment_target_point(
-                np.array(measurement_i["target_point"]), 
-                y_augmentation=aug_translation, 
-                yaw_augmentation=aug_rotation
+                np.array(measurement_i["target_point"]),
+                y_augmentation=aug_translation,
+                yaw_augmentation=aug_rotation,
             )
-            target_point_seq.append(target_point)            
+            target_point_seq.append(target_point)
             target_point_next = self.augment_target_point(
-                np.array(measurement_i["target_point_next"]), 
-                y_augmentation=aug_translation, 
-                yaw_augmentation=aug_rotation
+                np.array(measurement_i["target_point_next"]),
+                y_augmentation=aug_translation,
+                yaw_augmentation=aug_rotation,
             )
-            target_point_next_seq.append(target_point_next)     
+            target_point_next_seq.append(target_point_next)
 
             # Augment and process the route
             route = measurement_i["route"]
@@ -533,9 +550,7 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
             # Because the strings are stored as numpy byte objects we need to
             # convert them back to utf-8 strings
 
-            image_i = self._process_image(
-                self._load_jpg(images_path)
-            )
+            image_i = self._process_image(self._load_jpg(images_path))
             loaded_images.append(image_i)
 
             # Load optional aux images
@@ -543,7 +558,9 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
                 semantic_i = self._process_semantics(self._load_png(semantics_path))
                 loaded_semantics.append(semantic_i)
             if self.config.use_bev_semantic:
-                bev_semantic_i = self._process_bev_semantics(self._load_png(bev_semantics_path, crop=False))
+                bev_semantic_i = self._process_bev_semantics(
+                    self._load_png(bev_semantics_path, crop=False)
+                )
                 loaded_bev_semantics.append(bev_semantic_i)
             if self.config.use_depth:
                 depth_i = self._process_depth(self._load_png(depth_path))
@@ -558,10 +575,8 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
 
                 if self.config.use_plant:
                     future_box_path = str(future_boxes[idx], encoding="utf-8")
-                    future_boxes_i = self._load_json_gz(
-                        future_box_path
-                    )
-                
+                    future_boxes_i = self._load_json_gz(future_box_path)
+
                 # Process and pad the boxes
                 boxes_i, boxes_padded_i, _, future_boxes_padded_i = self._process_boxes(
                     boxes_i, future_boxes_i, aug_translation, aug_rotation
@@ -596,12 +611,10 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
             lidar = self.lidar_to_histogram_features(
                 lidar, use_ground_plane=self.config.use_ground_plane
             )
-            lidar = self.lidar_augmenter_func(
-                image=np.transpose(lidar, (1, 2, 0))
-            )
+            lidar = self.lidar_augmenter_func(image=np.transpose(lidar, (1, 2, 0)))
             lidar = np.transpose(lidar, (2, 0, 1))
             loaded_lidars.append(lidar)
-        
+
         # Converting to array retains the seq dimension
         # For seq=1, this dimension is removed later
         data["rgb"] = np.array(loaded_images)
@@ -624,7 +637,9 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
             data["bounding_boxes"] = np.array(loaded_boxes)
             if self.config.use_plant:
                 data["future_bounding_boxes"] = np.array(loaded_future_boxes)
-            data["center_heatmap"] = np.array([t["center_heatmap_target"] for t in box_targets])
+            data["center_heatmap"] = np.array(
+                [t["center_heatmap_target"] for t in box_targets]
+            )
             data["wh"] = np.array([t["wh_target"] for t in box_targets])
             data["yaw_class"] = np.array([t["yaw_class_target"] for t in box_targets])
             data["yaw_res"] = np.array([t["yaw_res_target"] for t in box_targets])
@@ -636,11 +651,14 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
 
         # The rest can be handled by this simple one-liner
         #   dict of lists, like what a data loader does to batches
-        measurement_seq = loaded_measurements[:self.config.seq_len]
+        measurement_seq = loaded_measurements[: self.config.seq_len]
         meas_dict_seq = {
             k: np.array(
-                [d[k] for d in measurement_seq]  # val is list of vals of all dicts at that key
-            ) for k in measurement_seq[0]  # keys of sample dict (assumes all same keys)
+                [
+                    d[k] for d in measurement_seq
+                ]  # val is list of vals of all dicts at that key
+            )
+            for k in measurement_seq[0]  # keys of sample dict (assumes all same keys)
         }
         data["steer"] = meas_dict_seq["steer"]
         data["throttle"] = meas_dict_seq["throttle"]
@@ -660,7 +678,7 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
         # Load temporal images
         loaded_temporal_images = []
         if self.config.img_seq_len > 1:
-            # TODO: does it make sense to apply agumentations here? 
+            # TODO: does it make sense to apply agumentations here?
             # Temporal data just for LiDAR
             for i in range(self.config.img_seq_len):
                 img_path = str(temporal_images[i], encoding="utf-8")
@@ -681,7 +699,7 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
                         loaded_temporal_measurements[i],
                         loaded_temporal_measurements[self.config.lidar_seq_len - 1],
                         # This is cheat, the augs are retained outside the local scope (because python)
-                        # We know that this is the correct aug since we only have one aug with lidar_seq_len > 1. 
+                        # We know that this is the correct aug since we only have one aug with lidar_seq_len > 1.
                         # It is not pretty, however, and should be fixed (TODO)
                         y_augmentation=aug_translation,
                         yaw_augmentation=aug_rotation,
@@ -716,22 +734,19 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
         #     )
 
         #     data["ego_waypoints"] = np.array(waypoints)
-                
+
         # Finally, if seq==1, remove the seq dimension
         if self.config.seq_len == 1:
             data = {
-                k: v.squeeze(0) 
-                if k not in ["temporal_lidar", "temporal_rgb"] 
-                else v for k, v in data.items()
+                k: v.squeeze(0) if k not in ["temporal_lidar", "temporal_rgb"] else v
+                for k, v in data.items()
             }
 
         return data
 
     def _process_image(self, image_array: np.ndarray) -> np.ndarray:
         if self.config.use_color_aug:
-            image_array =  self.image_augmenter_func(
-                image=image_array
-            )
+            image_array = self.image_augmenter_func(image=image_array)
         image_array = np.transpose(image_array, (2, 0, 1))
         return image_array
 
@@ -742,7 +757,7 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
             :: self.config.perspective_downsample_factor,
         ]
         return semantics_array
-    
+
     def _process_bev_semantics(self, bev_array: np.ndarray) -> np.ndarray:
         # NOTE the BEV label can unfortunately only be saved up to 2.0 ppm resolution. We upscale it here.
         # If you change these values you might need to change the up-scaling as well.
@@ -754,16 +769,12 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
         assert self.config.min_x == -32
         if self.config.pixels_per_meter == 4.0:
             # Downsample BEV
-            bev_array = (
-                bev_array[64:192, 64:192]
-                .repeat(2, axis=0)
-                .repeat(2, axis=1)
-            )
+            bev_array = bev_array[64:192, 64:192].repeat(2, axis=0).repeat(2, axis=1)
         bev_array = self.bev_converter[bev_array]
         return bev_array
 
     def _process_depth(self, depth_array: np.ndarray) -> np.ndarray:
-        depth_array = (depth_array.astype(np.float32) / 255.0)
+        depth_array = depth_array.astype(np.float32) / 255.0
         depth_array = cv2.resize(
             depth_array,
             dsize=(
@@ -784,9 +795,7 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
 
         # Pad bounding boxes to a fixed number
         bounding_boxes = np.array(bounding_boxes)
-        bounding_boxes_padded = np.zeros(
-            (self.config.max_num_bbs, 8), dtype=np.float32
-        )
+        bounding_boxes_padded = np.zeros((self.config.max_num_bbs, 8), dtype=np.float32)
         future_bounding_boxes_padded = None
 
         if self.config.use_plant:
@@ -804,14 +813,19 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
                         : future_bounding_boxes.shape[0], :
                     ] = future_bounding_boxes
             else:
-                bounding_boxes_padded[: self.config.max_num_bbs, :] = (
-                    bounding_boxes[: self.config.max_num_bbs]
-                )
+                bounding_boxes_padded[: self.config.max_num_bbs, :] = bounding_boxes[
+                    : self.config.max_num_bbs
+                ]
                 if self.config.use_plant:
                     future_bounding_boxes_padded[: self.config.max_num_bbs, :] = (
                         future_bounding_boxes[: self.config.max_num_bbs]
                     )
-        return bounding_boxes, bounding_boxes_padded, future_bounding_boxes, future_bounding_boxes_padded
+        return (
+            bounding_boxes,
+            bounding_boxes_padded,
+            future_bounding_boxes,
+            future_bounding_boxes_padded,
+        )
 
     def _is_valid_route(self, route_dir: Union[os.PathLike, str]) -> bool:
         """
@@ -1446,7 +1460,7 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
         with gzip.open(path, "rt", encoding="utf-8") as f:
             json = ujson.load(f)
         return json
-    
+
 
 def image_augmenter(prob=0.2, cutout=False):
     augmentations = [
