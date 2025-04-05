@@ -24,8 +24,8 @@ class MHATemporalFusion(nn.Module):
         self.historic_init = nn.Parameter(torch.zeros(1, 65, 256)) if learnable_init else torch.zeros(1, 65, 256)
 
         # Fusion layers
-        self.cross_attn = MultiheadAttention(embedded_dim, n_heads, 0.2, batch_first=True)
-        self.self_attn = MultiheadAttention(embedded_dim, n_heads, 0.2, batch_first=True)
+        self.cross_attn = MultiheadAttention(embedded_dim, n_heads, dropout=0.2, batch_first=True)
+        self.self_attn = MultiheadAttention(embedded_dim, n_heads, dropout=0.2, batch_first=True)
         self.mlp = nn.Sequential(
             nn.Linear(embedded_dim, hidden_dim),  # e.g. 256x1024
             nn.GELU(),  # Default for transformers
