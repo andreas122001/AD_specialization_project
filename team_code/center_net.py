@@ -36,7 +36,7 @@ class LidarCenterNetHead(nn.Module):
     self.loss_offset = nn.L1Loss(reduction='none')
     self.loss_dir_class = nn.CrossEntropyLoss(reduction='none')
     self.loss_dir_res = nn.SmoothL1Loss(reduction='none')
-    if not (self.config.lidar_seq_len == 1 and self.config.seq_len == 1):
+    if self.config.use_velocity_brake_head and not (self.config.lidar_seq_len == 1 and self.config.seq_len == 1):
       self.loss_velocity = nn.L1Loss(reduction='none')
       self.loss_brake = nn.CrossEntropyLoss(reduction='none')
 
@@ -64,7 +64,7 @@ class LidarCenterNetHead(nn.Module):
     yaw_class_pred = self.yaw_class_head(feat)
     yaw_res_pred = self.yaw_res_head(feat)
 
-    if not (self.config.lidar_seq_len == 1 and self.config.seq_len == 1):
+    if self.config.use_velocity_brake_head and not (self.config.lidar_seq_len == 1 and self.config.seq_len == 1):
       velocity_pred = self.velocity_head(feat)
       brake_pred = self.brake_head(feat)
     else:
@@ -114,7 +114,7 @@ class LidarCenterNetHead(nn.Module):
                   loss_yaw_class=loss_yaw_class,
                   loss_yaw_res=loss_yaw_res)
 
-    if not (self.config.lidar_seq_len == 1 and self.config.seq_len == 1):
+    if self.config.use_velocity_brake_head and not (self.config.lidar_seq_len == 1 and self.config.seq_len == 1):
       loss_velocity = (self.loss_velocity(velocity_pred, velocity_target) * pixel_weight[:, 0:1]).sum() / avg_factor
       loss_brake = (self.loss_brake(brake_pred, brake_target) * pixel_weight[:, 0]).sum() / avg_factor
       losses['loss_velocity'] = loss_velocity
@@ -215,7 +215,7 @@ class LidarCenterNetHead(nn.Module):
     yaw_class = torch.argmax(yaw_class, -1)
     yaw = self.class2angle(yaw_class, yaw_res.squeeze(2))
 
-    if not (self.config.lidar_seq_len == 1 and self.config.seq_len == 1):
+    if self.config.use_velocity_brake_head and not (self.config.lidar_seq_len == 1 and self.config.seq_len == 1):
       velocity = g_t.transpose_and_gather_feat(velocity_pred, batch_index)
       brake = g_t.transpose_and_gather_feat(brake_pred, batch_index)
       brake = torch.argmax(brake, -1)
