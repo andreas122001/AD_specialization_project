@@ -134,7 +134,7 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
                 )
 
                 if last_frame <= first_frame:
-                    warnings.warn(f"Not enough frames in {route_dir} for given sequence length {config.seq_len} and step {config.seq_step}, skipping route")
+                    warnings.warn(f"Not enough frames in {route_dir} for given sequence length (rgb: {config.img_seq_len}, lidar: {config.lidar_seq_len}, all: {config.seq_len}) and step size (rgb: {config.img_step_size}, lidar: {config.lidar_step_size}, all: {config.seq_step}), skipping route.")
                     skipped_routes += 1
                     continue
 
@@ -1436,30 +1436,54 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
 
         interpolated_route_points = np.array(interpolated_route_points)
         return interpolated_route_points
+    
+    def _load_cached(self, path: Union[str, os.PathLike], load_func):
+        item_i = None
+        # load from cache, if enabled and found
+        if self.data_cache is not None:
+            item_i = self.data_cache.get(path)
+        if item_i is None:
+            item_i = load_func(path)
+            # save to cache, if enabled
+            if self.data_cache is not None:
+                self.data_cache.set(key=path, value=item_i)
+        return item_i
 
     def _load_lidar(self, path: Union[str, os.PathLike]) -> np.ndarray:
-        las_object = laspy.read(path)
-        lidars_i = las_object.xyz
-        return lidars_i
+        "Loads lidar data"
+        def _load(path):
+            las_object = laspy.read(path)
+            lidars_i = las_object.xyz
+            return lidars_i
+        
+        return self._load_cached(path, _load)
 
     def _load_jpg(self, path: Union[str, os.PathLike]) -> np.ndarray:
         "Used for loading images"
-        image_i = cv2.imread(path, cv2.IMREAD_COLOR)
-        image_i = cv2.cvtColor(image_i, cv2.COLOR_BGR2RGB)
-        image_i = t_u.crop_array(self.config, image_i)
-        return image_i
+        def _load(path):
+            image_i = cv2.imread(path, cv2.IMREAD_COLOR)
+            image_i = cv2.cvtColor(image_i, cv2.COLOR_BGR2RGB)
+            image_i = t_u.crop_array(self.config, image_i)
+            return image_i
+        
+        return self._load_cached(path, _load)
 
     def _load_png(self, path: Union[str, os.PathLike], crop: bool = True) -> np.ndarray:
         "Used for loading semantics, bev_semantics and depth"
-        image_i = cv2.imread(path, cv2.IMREAD_UNCHANGED)
-        if crop:
-            image_i = t_u.crop_array(self.config, image_i)
-        return image_i
+        def _load(path):
+            image_i = cv2.imread(path, cv2.IMREAD_UNCHANGED)
+            if crop:
+                image_i = t_u.crop_array(self.config, image_i)
+            return image_i
+
+        return self._load_cached(path, _load)
 
     def _load_json_gz(self, path: Union[str, os.PathLike]) -> np.ndarray:
-        with gzip.open(path, "rt", encoding="utf-8") as f:
-            json = ujson.load(f)
-        return json
+        def _load(path):
+            with gzip.open(path, "rt", encoding="utf-8") as f:
+                json = ujson.load(f)
+            return json
+        return self._load_cached(path, _load)
 
 
 def image_augmenter(prob=0.2, cutout=False):
