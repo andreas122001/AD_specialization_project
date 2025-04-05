@@ -2,6 +2,9 @@
 The main model structure
 """
 
+from typing import Optional
+from config import GlobalConfig
+from temporal_modules import MHATemporalFusion
 import transfuser_utils as t_u
 from focal_loss import FocalLoss
 import numpy as np
@@ -31,7 +34,7 @@ class LidarCenterNet(nn.Module):
     The main model class. It can run all model configurations.
     """
 
-    def __init__(self, config):
+    def __init__(self, config: GlobalConfig):
         super().__init__()
         self.config = config
         self.lateral_pid_controller = LateralPIDController(self.config)
@@ -379,6 +382,9 @@ class LidarCenterNet(nn.Module):
         if self.config.multi_wp_output:
             self.selection_loss = nn.BCEWithLogitsLoss()
 
+        if self.config.use_temporal_fusion and self.config.seq_len > 1:
+            self.temporal_fusor = MHATemporalFusion(embedded_dim=256)
+
     def reset_parameters(self):
         if self.config.use_wp_gru:
             nn.init.uniform_(self.wp_query)
@@ -389,14 +395,71 @@ class LidarCenterNet(nn.Module):
         if self.config.tp_attention:
             nn.init.uniform_(self.tp_pos_embed)
 
-    # TODO: make two forward, where one takes in lidar_bev and the other not to avoid the control flow here (bad for tracing)
     def forward(
-        self, rgb, lidar_bev, target_point, ego_vel, command, target_point_next=None
+        self,
+        rgb: torch.Tensor,
+        lidar_bev: torch.Tensor,
+        target_point: torch.Tensor,
+        ego_vel: torch.Tensor,
+        command: torch.Tensor,
+        target_point_next: Optional[torch.Tensor] = None,
     ):
+        # Get batch and seq dims
+        batch_dim = lidar_bev.shape[0]
+        seq_dim = (
+            lidar_bev.shape[1]
+            if len(lidar_bev.shape) == 5 and self.config.use_temporal_fusion
+            else 1
+        )
+
+        # If seq dim > 1, do recurrent forward
+        if self.config.use_temporal_fusion and seq_dim > 1:
+            # Loop over the seq dim
+            historic_feature = None #torch.zeros((batch_dim, 65, 256)).to(lidar_bev.device)
+            for i in range(seq_dim):
+                outputs = self._forward_step(
+                    rgb[:, i],
+                    lidar_bev[:, i],
+                    target_point[:, i],
+                    ego_vel.transpose(-1, -2)[
+                        :, i
+                    ],  # because we unsqueeze it before (not incl. seq dim)
+                    command[:, i],
+                    target_point_next[:, i] if target_point_next else None,
+                    historic_feature,
+                )
+                historic_feature = outputs[-1]
+        else:
+            outputs = self._forward_step(
+                rgb,
+                lidar_bev,
+                target_point,
+                ego_vel,
+                command,
+                target_point_next,
+                None,
+            )
+
+        return outputs[:-1]
+
+    # RGB: (B, C, W, H)
+    # BEV: (B, W, H)
+    def _forward_step(
+        self,
+        rgb: torch.Tensor,
+        lidar_bev: torch.Tensor,
+        target_point: torch.Tensor,
+        ego_vel: torch.Tensor,
+        command: torch.Tensor,
+        target_point_next: Optional[torch.Tensor] = None,
+        historic_features: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+
         bs = rgb.shape[0]
         if self.config.two_tp_input:
             target_point = torch.cat((target_point, target_point_next), axis=1)
 
+        ### Run backbone ###
         if self.config.backbone == "transFuser":
             bev_feature_grid, fused_features, image_feature_grid = self.backbone(
                 rgb, lidar_bev
@@ -412,22 +475,27 @@ class LidarCenterNet(nn.Module):
                 "The chosen vision backbone does not exist. "
                 "The options are: transFuser, aim, bev_encoder"
             )
-
         pred_wp = None
         pred_target_speed = None
         pred_checkpoint = None
         attention_weights = None
         pred_wp_1 = None
         selected_path = None
+        features = None
 
-        if self.config.use_wp_gru or self.config.use_controller_input_prediction:
-            if self.config.transformer_decoder_join:
+        ### Transformer Decoder (enabled by default) ###
+        if (
+            self.config.use_wp_gru or self.config.use_controller_input_prediction
+        ):  # Default: True
+            if self.config.transformer_decoder_join:  # Default: True
                 fused_features = self.change_channel(fused_features)
                 fused_features = fused_features + self.encoder_pos_encoding(
                     fused_features
                 )
                 fused_features = torch.flatten(fused_features, start_dim=2)
-                if self.config.tp_attention:
+                if (
+                    self.config.tp_attention
+                ):  # Default: False (for attention visualization)
                     num_pixel_tokens = fused_features.shape[2]
 
             # Concatenate extra sensor information
@@ -450,10 +518,22 @@ class LidarCenterNet(nn.Module):
                 else:
                     fused_features = torch.cat((fused_features, extra_sensors), axis=1)
 
-            if self.config.transformer_decoder_join:
+            if self.config.transformer_decoder_join:  # Default: True
                 fused_features = torch.permute(fused_features, (0, 2, 1))
-                if self.config.use_wp_gru:
-                    if self.config.multi_wp_output:
+
+                ### Temporal fusion (if enabled) ###
+                if self.config.use_temporal_fusion and self.config.seq_len > 1:
+                    if historic_features is not None:
+                        fused_features, _ = self.temporal_fusor(
+                            fused_features, historic_features
+                        )
+                    features = fused_features.clone()
+                    if not self.config.use_recurrent_training:  # If not recurrent, detach tensor from backprop
+                        features = features.detach()
+
+                if self.config.use_wp_gru:  # Default: False
+                    # Using multiple waypoints (not enabled by default)
+                    if self.config.multi_wp_output:  # default: False
                         joined_wp_features = self.join(
                             self.wp_query.repeat(bs, 1, 1), fused_features
                         )
@@ -467,20 +547,22 @@ class LidarCenterNet(nn.Module):
                         selected_path = self.select_wps(
                             joined_wp_features[:, 2 * num_wp]
                         )
-                    else:
-                        if (
+                    else:  # Default: True
+                        if (  # default: False
                             self.config.tp_attention
                         ):  # self.join will return a tuple, but we don't need the attention values here
                             joined_wp_features, _ = self.join(
                                 self.wp_query.repeat(bs, 1, 1), fused_features
                             )
-                        else:
+                        else:  # True
                             joined_wp_features = self.join(
                                 self.wp_query.repeat(bs, 1, 1), fused_features
                             )
                         pred_wp = self.wp_decoder(joined_wp_features, target_point)
-                if self.config.use_controller_input_prediction:
-                    if self.config.tp_attention:
+
+                ### Decode with Transformer Decoder (in self.join) ###
+                if self.config.use_controller_input_prediction:  # Default: True
+                    if self.config.tp_attention:  # Default: False
                         tp_token = self.tp_encoder(target_point)
                         tp_token = tp_token + self.tp_pos_embed
                         fused_features = torch.cat(
@@ -507,7 +589,7 @@ class LidarCenterNet(nn.Module):
                             speed_attention.item(),
                             tp_attention.item(),
                         ]
-                    else:
+                    else:  # Default: True
                         joined_checkpoint_features = self.join(
                             self.checkpoint_query.repeat(bs, 1, 1), fused_features
                         )
@@ -522,7 +604,7 @@ class LidarCenterNet(nn.Module):
                     pred_checkpoint = self.checkpoint_decoder(
                         gru_features, target_point
                     )
-                    if self.config.input_path_to_target_speed_network:
+                    if self.config.input_path_to_target_speed_network:  # Default: False
                         ts_input = torch.cat(
                             (
                                 target_speed_features,
@@ -538,7 +620,7 @@ class LidarCenterNet(nn.Module):
                             target_speed_features
                         )
 
-            else:
+            else:  # Default: False
                 joined_features = self.join(fused_features)
                 gru_features = joined_features
                 target_speed_features = joined_features[
@@ -587,6 +669,7 @@ class LidarCenterNet(nn.Module):
         if self.config.detect_boxes:
             pred_bounding_box = self.head(bev_feature_grid)
 
+        # TODO: can we make this into a dict instead? Then we can jsut unpack "preds_dict" into compute_loss
         return (
             pred_wp,
             pred_target_speed,
@@ -598,34 +681,35 @@ class LidarCenterNet(nn.Module):
             attention_weights,
             pred_wp_1,
             selected_path,
+            features,
         )
 
     def compute_loss(
         self,
-        pred_wp,
-        pred_target_speed,
-        pred_checkpoint,
-        pred_semantic,
-        pred_bev_semantic,
-        pred_depth,
-        pred_bounding_box,
-        pred_wp_1,
-        selected_path,
-        waypoint_label,
-        target_speed_label,
-        checkpoint_label,
-        semantic_label,
-        bev_semantic_label,
-        depth_label,
-        center_heatmap_label,
-        wh_label,
-        yaw_class_label,
-        yaw_res_label,
-        offset_label,
-        velocity_label,
-        brake_target_label,
-        pixel_weight_label,
-        avg_factor_label,
+        pred_wp=None,
+        pred_target_speed=None,
+        pred_checkpoint=None,
+        pred_semantic=None,
+        pred_bev_semantic=None,
+        pred_depth=None,
+        pred_bounding_box=None,
+        pred_wp_1=None,
+        selected_path=None,
+        waypoint_label=None,
+        target_speed_label=None,
+        checkpoint_label=None,
+        semantic_label=None,
+        bev_semantic_label=None,
+        depth_label=None,
+        center_heatmap_label=None,
+        wh_label=None,
+        yaw_class_label=None,
+        yaw_res_label=None,
+        offset_label=None,
+        velocity_label=None,
+        brake_target_label=None,
+        pixel_weight_label=None,
+        avg_factor_label=None,
     ):
         loss = {}
         if self.config.use_wp_gru:

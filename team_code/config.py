@@ -505,7 +505,7 @@ class GlobalConfig:
         self.batch_size = 16  # Batch size used during training
         self.logdir = ""  # Directory to log data to.
         self.load_file = None  # File to continue training from
-        self.setting = "all"  # Setting used for training
+        self.setting = "13_withheld"  # Setting used for training
         self.root_dir = ""  # Dataset root dir
         # When to reduce the learning rate for the first and second  time
         self.schedule_reduce_epoch_01 = 30
@@ -710,8 +710,9 @@ class GlobalConfig:
         self.bev_upsample_factor = 2
 
         # Temporal fusion
-        self.use_temporal_fusion = False  # TODO implement
-        self.backprop_every_step = False  # TODO implement
+        self.use_temporal_fusion = True  # Enables streaming-based temporal fusion in the model
+        self.use_recurrent_training = True  # Disables backpropagation through temporal features, avoids model unwrapping during training
+        self.backprop_every_step = False  # TODO implement, should do backprop on every timestep, might not be sensible though
 
         # GPT Encoder
         self.block_exp = 4
@@ -731,7 +732,7 @@ class GlobalConfig:
         self.predict_checkpoint_len = 10
 
         # Whether to normalize the camera image by the imagenet distribution
-        self.normalize_imagenet = True
+        self.normalize_imagenet = False  # TODO: there is a bug that causes normalization to fail when seq_len > 1
         self.use_wp_gru = False  # Whether to use the WP output GRU.
 
         # Semantic Segmentation
