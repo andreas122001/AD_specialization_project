@@ -533,6 +533,19 @@ def main():
         default=str(config.compile_mode),
         help="compile mode for torch compile",
     )
+    parser.add_argument(
+        "--seq_len",
+        type=int,
+        default=1,
+        help="sequence length of data for recurrent training",
+    )
+    parser.add_argument("--validation", action="store_true", help="use validation set")
+    parser.add_argument(
+        "--use_recurrent_training",
+        type=bool,
+        default=False,
+        help="use recurrent training (train like an RNN, high compute)",
+    )
 
     args = parser.parse_args()
     args.logdir = os.path.join(args.logdir, args.id)
@@ -550,7 +563,7 @@ def main():
         tmp_folder = str(os.environ.get("SCRATCH", "/tmp"))
         tmp_folder = tmp_folder + "/" + args.dataset_cache_name
         print("Tmp folder for dataset cache: ", tmp_folder)
-        shared_dict = Cache(directory=tmp_folder, size_limit=int(768 * 1024**3))
+        shared_dict = Cache(directory=tmp_folder, size_limit=int(250 * 1024**3))
     else:
         shared_dict = None
 
@@ -691,7 +704,7 @@ def main():
         validation=False,
     )
 
-    if args.setting != "all":
+    if args.setting != "all" and args.validation:
         val_set = CARLA_Data(
             root=config.data_roots,
             config=config,
@@ -816,7 +829,7 @@ def main():
         drop_last=True,
     )
 
-    if args.setting != "all":
+    if args.setting != "all" and args.validation:
         sampler_val = torch.utils.data.distributed.DistributedSampler(
             val_set, shuffle=True, num_replicas=world_size, rank=rank, drop_last=True
         )
@@ -899,7 +912,12 @@ def main():
         trainer.train()
         torch.cuda.empty_cache()
 
-        if (args.setting != "all") and (epoch % args.val_every == 0):
+        if (
+            (args.setting != "all")
+            and (epoch % args.val_every == 0)
+            and args.validation
+            and len(dataloader_val) > 0
+        ):
             trainer.validate()
             torch.cuda.empty_cache()
 
@@ -963,11 +981,16 @@ class Engine(object):
         self.detailed_loss_weights = config.detailed_loss_weights
 
     def load_data_compute_loss(self, data, validation=False):
+
         if self.config.use_temporal_fusion and self.config.seq_len > 1:
             # Select the last seq item
             data = {
-                k: v[:, -1] if k not in ["rgb", "lidar", "target_point", "speed", "command"] 
-                else v for k, v in data.items() 
+                k: (
+                    v[:, -1]
+                    if k not in ["rgb", "lidar", "target_point", "speed", "command"]
+                    else v
+                )
+                for k, v in data.items()
             }
 
         # Validation = True will compute additional metrics not used for optimization
@@ -1261,7 +1284,7 @@ class Engine(object):
                 torch.nn.utils.clip_grad_norm_(
                     self.model.parameters(),
                     max_norm=int(self.config.grad_clip_max_norm),
-                    error_if_nonfinite=True,
+                    error_if_nonfinite=False,
                 )
 
             self.scaler.step(self.optimizer)
