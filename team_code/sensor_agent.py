@@ -655,6 +655,7 @@ class SensorAgent(autonomous_agent.AutonomousAgent):
                     attention_weights,
                     pred_wp_1,
                     selected_path,
+                    temporal_attn_weights,
                 ) = self.nets[i].forward(
                     rgb=tick_data["rgb"],
                     lidar_bev=lidar_bev,

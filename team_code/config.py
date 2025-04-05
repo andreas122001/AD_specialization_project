@@ -739,7 +739,7 @@ class GlobalConfig:
         self.predict_checkpoint_len = 10
 
         # Whether to normalize the camera image by the imagenet distribution
-        self.normalize_imagenet = False  # TODO: there is a bug that causes normalization to fail when seq_len > 1
+        self.normalize_imagenet = True
         self.use_wp_gru = False  # Whether to use the WP output GRU.
 
         # Semantic Segmentation

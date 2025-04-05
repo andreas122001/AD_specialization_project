@@ -10,6 +10,7 @@ import subprocess
 import time
 from pathlib import Path
 import os
+import glob
 import fnmatch
 import ujson
 import argparse
@@ -48,7 +49,7 @@ export PORT=$1
 echo 'World Port:' $PORT
 export TM_PORT=`comm -23 <(seq {carla_tm_port_start} {carla_tm_port_start+49} | sort) <(ss -Htan | awk '{{print $4}}' | cut -d':' -f2 | sort -u) | shuf | head -n 1`
 echo 'TM Port:' $TM_PORT
-export ROUTES={route_path}{route}.xml
+export ROUTES={route_path}
 export TEAM_AGENT={team_code}/sensor_agent.py
 export TEAM_CONFIG={team_code}/checkpoints/{checkpoint}/
 export CHALLENGE_TRACK_CODENAME=SENSORS
@@ -57,7 +58,7 @@ export RESUME=1
 export SEED={seed}
 export CHECKPOINT_ENDPOINT={results_save_dir}/{route}.json
 export DEBUG_ENV_AGENT=0
-export DEBUG_CHALLENGE=1
+export DEBUG_CHALLENGE=0
 export RECORD=1
 export DIRECT=1
 export COMPILE=0
@@ -108,7 +109,7 @@ def make_jobsub_file(commands, job_number, exp_name, exp_root_name, partition):
     qsub_template = f"""#!/bin/bash
 #SBATCH --job-name={exp_name}{job_number}
 #SBATCH --partition={partition}
-#SBATCH --account=ie-idi
+#SBATCH --account=share-ie-idi
 #SBATCH -o evaluation/{exp_root_name}/{exp_name}/run_files/logs/qsub_out{job_number}.log
 #SBATCH -e evaluation/{exp_root_name}/{exp_name}/run_files/logs/qsub_out{job_number}.log
 #SBATCH --nodes=1
@@ -161,13 +162,13 @@ def main():
     parser.add_argument(
         "--experiment",
         type=str,
-        default="town13_withheld",
+        default="tfpp_base",
         help="Name of folder where the model files are stored in e.g. tfpp_020_0",
     )
     parser.add_argument(
         "--model_dir",
         type=str,
-        default="/cluster/work/andrebw/repos/temporal_garage/evaluation/pretrained_models",
+        default="/cluster/work/andrebw/repos/temporal_garage/results",
         help="Folder containing all the experiment folders.",
     )
     parser.add_argument(
@@ -194,7 +195,7 @@ def main():
     parser.add_argument(
         "--epochs",
         nargs="+",
-        default=["model_0030_0"],
+        default=["model_0030"],
         type=str,
         help="Model names to be evaluated",
     )
@@ -230,8 +231,10 @@ def main():
         seeds.append(i)
     # route_path = f'leaderboard/data/{benchmark}_split/'
     # route_path = f"data/town13_selection/"
-    route_path = f"data/50x36_Town13/ConstructionObstacleTwoWays/"
+    # route_path = f"data/50x36_Town13/ConstructionObstacleTwoWays/"
+    route_root = f"data/collection/"
     route_pattern = "*.xml"
+    route_files = glob.glob(f"{route_root}/**/{route_pattern}", recursive=True)
 
     carla_world_port_start = 10000
     carla_streaming_port_start = 20000
@@ -265,11 +268,11 @@ def main():
             print(cmd)
             os.system(cmd)
 
-        route_files = []
-        for root, _, files in os.walk(route_path):
-            for name in files:
-                if fnmatch.fnmatch(name, route_pattern):
-                    route_files.append(os.path.join(root, name))
+        # route_files = []
+        # for root, _, files in os.walk(route_path):
+        #     for name in files:
+        #         if fnmatch.fnmatch(name, route_pattern):
+        #             route_files.append(os.path.join(root, name))
 
         for exp_name in exp_names:
             bash_save_dir = Path(
@@ -286,8 +289,9 @@ def main():
         meta_jobs = {}
 
         for idx, exp_name in enumerate(exp_names):
-            for route in route_files:
-                route = Path(route).stem
+            for route_path in route_files:
+
+                route = Path(route_path).stem
 
                 bash_save_dir = Path(
                     f"evaluation/{experiment_name_root}/{exp_name}/run_bashs"

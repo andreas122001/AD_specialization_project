@@ -1110,6 +1110,7 @@ class Engine(object):
                 _,
                 pred_wp_1,
                 selected_path,
+                _,
             ) = self.model(
                 rgb=rgb,
                 lidar_bev=lidar,
