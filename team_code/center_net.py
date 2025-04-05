@@ -26,7 +26,7 @@ class LidarCenterNetHead(nn.Module):
     self.offset_head = self._build_head(config.bb_input_channel, 2)
     self.yaw_class_head = self._build_head(config.bb_input_channel, config.num_dir_bins)
     self.yaw_res_head = self._build_head(config.bb_input_channel, 1)
-    if not (self.config.lidar_seq_len == 1 and self.config.seq_len == 1):
+    if self.config.use_velocity_brake_head and not (self.config.lidar_seq_len == 1 and self.config.seq_len == 1):
       self.velocity_head = self._build_head(config.bb_input_channel, 1)
       self.brake_head = self._build_head(config.bb_input_channel, 2)
 
