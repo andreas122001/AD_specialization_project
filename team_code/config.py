@@ -713,6 +713,13 @@ class GlobalConfig:
         self.use_temporal_fusion = True  # Enables streaming-based temporal fusion in the model
         self.use_recurrent_training = True  # Disables backpropagation through temporal features, avoids model unwrapping during training
         self.backprop_every_step = False  # TODO implement, should do backprop on every timestep, might not be sensible though
+        self.use_temporal_attn_weights = False  # Whether to return the attention weights of the temporal fusion module, for attn. vis.
+        self.temporal_fusion_heads = 4  # per-head dim would be 64 -> 256/4
+        self.temporal_hidden_dim = 512
+        self.use_learnable_historic_initialization = True  # Whether to learn initial historic tokens, else use zeros
+        
+        # This used to be default True for seq_len > 1, but can now be disabled to make it comparable to the original TransFuser++, or for using other future prediction methods
+        self.use_velocity_brake_head = False  # Whether to predict velocity and braking for bbs in CenterNet, can not be used with seq_len=1 (makes not sense then)
 
         # GPT Encoder
         self.block_exp = 4

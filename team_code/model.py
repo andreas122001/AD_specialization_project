@@ -383,7 +383,13 @@ class LidarCenterNet(nn.Module):
             self.selection_loss = nn.BCEWithLogitsLoss()
 
         if self.config.use_temporal_fusion and self.config.seq_len > 1:
-            self.temporal_fusor = MHATemporalFusion(embedded_dim=256)
+            self.temporal_fusor = MHATemporalFusion(
+                embedded_dim=256, 
+                hidden_dim=self.config.temporal_hidden_dim,
+                n_heads=self.config.temporal_fusion_heads, 
+                use_attn_weights=self.config.use_temporal_attn_weights,
+                learnable_init=self.config.use_learnable_historic_initialization,
+            )
 
     def reset_parameters(self):
         if self.config.use_wp_gru:
@@ -415,7 +421,7 @@ class LidarCenterNet(nn.Module):
         # If seq dim > 1, do recurrent forward
         if self.config.use_temporal_fusion and seq_dim > 1:
             # Loop over the seq dim
-            historic_feature = None #torch.zeros((batch_dim, 65, 256)).to(lidar_bev.device)
+            historic_feature = None
             for i in range(seq_dim):
                 outputs = self._forward_step(
                     rgb[:, i],
@@ -478,9 +484,10 @@ class LidarCenterNet(nn.Module):
         pred_wp = None
         pred_target_speed = None
         pred_checkpoint = None
-        attention_weights = None
+        attention_weights = None  # decoder attention weights
         pred_wp_1 = None
         selected_path = None
+        temporal_attn_weights = (None, None)  # (cross_attn, self_attn)
         features = None
 
         ### Transformer Decoder (enabled by default) ###
@@ -519,14 +526,13 @@ class LidarCenterNet(nn.Module):
                     fused_features = torch.cat((fused_features, extra_sensors), axis=1)
 
             if self.config.transformer_decoder_join:  # Default: True
-                fused_features = torch.permute(fused_features, (0, 2, 1))
+                fused_features = torch.permute(fused_features, (0, 2, 1))  # (BZ, n_dim, 65) -> (BZ, 65, n_dim)
 
                 ### Temporal fusion (if enabled) ###
                 if self.config.use_temporal_fusion and self.config.seq_len > 1:
-                    if historic_features is not None:
-                        fused_features, _ = self.temporal_fusor(
-                            fused_features, historic_features
-                        )
+                    fused_features, temporal_attn_weights = self.temporal_fusor(  # expects tensors: (BZ, 65, n_dim)
+                        fused_features, historic_features
+                    )
                     features = fused_features.clone()
                     if not self.config.use_recurrent_training:  # If not recurrent, detach tensor from backprop
                         features = features.detach()
@@ -681,6 +687,7 @@ class LidarCenterNet(nn.Module):
             attention_weights,
             pred_wp_1,
             selected_path,
+            temporal_attn_weights,
             features,
         )
 
