@@ -11,6 +11,7 @@ from video_swin_transformer import SwinTransformer3D
 import transfuser_utils as t_u
 from video_resnet import VideoResNet
 import copy
+from config import GlobalConfig
 
 
 class TransfuserBackbone(nn.Module):
@@ -18,7 +19,7 @@ class TransfuserBackbone(nn.Module):
     Multi-scale Fusion Transformer for image + LiDAR feature fusion
     """
 
-    def __init__(self, config):
+    def __init__(self, config: GlobalConfig):
         super().__init__()
         self.config = config
 
@@ -469,8 +470,6 @@ class GPT(nn.Module):
             lidar_tensor = (
                 lidar_tensor.permute(0, 2, 3, 1).contiguous().view(bz, -1, self.n_embd)
             )
-
-        print(self.lidar_time_frames, image_tensor.shape, lidar_tensor.shape, self.pos_emb.shape)
 
         token_embeddings = torch.cat((image_tensor, lidar_tensor), dim=1)
 
