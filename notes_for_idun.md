@@ -51,6 +51,16 @@ python -c "import torch; print(torch.cuda.is_available())"  # test CUDA
 
 It should print **True** now.
 
+**Fixing diskcache**
+
+There is a bug currently in the diskcache package due to an update in the libsqlite package. Other AI tools like EasyDiffusion have also had this problem, see [this issue](https://github.com/easydiffusion/easydiffusion/issues/1905).
+
+To fix it, upgrade libsqlite:
+
+```
+conda install conda-forge::libsqlite==3.49.1
+``` 
+
 
 ### Changes in evaluate_routes_slurm_tfpp.py
 
@@ -95,12 +105,24 @@ In `model.py`:
 
 To facilitate the experments of this thesis, the dataset was changed to support the addition of a sequence dimension to the sensor data. Functionality for this already existed in part in the original implementation.
 
-Simplified the code in __init__() by breaking up into smaller functions:
+Simplified the code in __init__() by breaking up into smaller functions (these is not the actual function headers and docstrings used, they're just for demonstration):
 ```python
 def _is_valid_route(self, route_dir) -> bool:
     """
     Returns True if the route meets the success conditions (perfect score, not failed, etc.)
     """
+
+def _load_jpg(self, path):
+    """
+    Loads a jpg image, used for loading images
+    """
+
+def _load_png(self, path, crop=True):
+    """
+    Loads a png image, used for loading depth, semantic and bev semantic. Also crops the images before returning.
+    """
+
+# etc...
 ```
 
 ### config.py
@@ -109,7 +131,6 @@ Added
 ```diff
 + # Temporal fusion
 + self.use_temporal_fusion = True
-+ self.use_recurrent_dataset = True
 # if we do backprop every step, the labels also need to be a sequence
 + self.backprop_every_step = True  
 ...
@@ -118,10 +139,9 @@ Added
 # -----------------------------------------------------------------------------
 self.carla_fps = 20  # Simulator Frames per second
 + self.seq_step = 1  # how many frames between each frame of a sequence of frames (when using frame sequences)
-+ self.seq_len = 2  # input timesteps
-- self.seq_len = 1  # input timesteps
+self.seq_len = 1  # input timesteps, can now be >1
 # use different seq len for image and lidar
-self.img_seq_len = 1
++ self.img_seq_len = 1
 self.lidar_seq_len = 1
 ```
 

@@ -3,6 +3,7 @@ carla/**
 team_code/checkpoints
 data/**
 dataset/**
+.vscode/
 
 /Scenario_Logs/
 /ros-bridge/
