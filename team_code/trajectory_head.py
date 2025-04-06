@@ -53,7 +53,7 @@ class TrajectoryDecoder(nn.Module):
 
         # Prediction heads
         self.traj_head = nn.Linear(n_dim, future_steps * 2)  # (x,y) per timestep
-        self.confidence_head = nn.Linear(n_dim, 1)
+        self.confidence_head = nn.Linear(n_dim, 2)  # binary classification for object/no-object
 
         nn.init.uniform_(self.query_embed.weight, -1.0, 1.0)
 
@@ -73,6 +73,6 @@ class TrajectoryDecoder(nn.Module):
         # Final predictions
         traj = self.traj_head(queries)  # (BZ, N, future_steps*2)
         traj = traj.reshape(batch_size, -1, self.future_steps, 2)  # (BZ, N, future_steps, 2)
-        confidence_logits = self.confidence_head(queries).squeeze(-1)  # (BZ, N)
+        confidence_logits = self.confidence_head(queries).squeeze(-1)  # (BZ, N, 2)
 
         return traj, confidence_logits

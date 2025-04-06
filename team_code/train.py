@@ -1098,6 +1098,9 @@ class Engine(object):
                 lidar = data["temporal_lidar"].to(self.device, dtype=torch.float32)
             else:
                 lidar = data["lidar"].to(self.device, dtype=torch.float32)
+            if self.config.use_trajectory_prediction:
+                gt_trajectories = data["trajectories"].to(self.device, dtype=torch.float32)
+                trajectories_mask = data["trajectories_mask"].to(self.device, dtype=torch.float32)
 
             (
                 pred_wp,
@@ -1151,6 +1154,8 @@ class Engine(object):
                 pred_depth=pred_depth,
                 pred_bounding_box=pred_bounding_box,
                 pred_trajectories=pred_trajectories,
+                gt_trajectories=gt_trajectories,
+                trajectories_mask=trajectories_mask
                 waypoint_label=ego_waypoint,
                 target_speed_label=target_speed,
                 checkpoint_label=checkpoint,

@@ -5,6 +5,7 @@ The main model structure
 from typing import Optional
 from config import GlobalConfig
 from temporal_modules import MHATemporalFusion
+from hungarian_loss import HungarianLoss
 import transfuser_utils as t_u
 from focal_loss import FocalLoss
 import numpy as np
@@ -386,6 +387,9 @@ class LidarCenterNet(nn.Module):
         if self.config.multi_wp_output:
             self.selection_loss = nn.BCEWithLogitsLoss()
 
+        if self.config.use_trajectory_prediction:
+            self.trajectory_loss = HungarianLoss()
+
         if self.config.use_temporal_fusion and self.config.seq_len > 1:
             self.temporal_fusor = MHATemporalFusion(
                 embedded_dim=256, 
@@ -711,6 +715,8 @@ class LidarCenterNet(nn.Module):
         pred_depth=None,
         pred_bounding_box=None,
         pred_trajectories=None,
+        gt_trajectories=None,
+        trajectories_mask=None,
         pred_wp_1=None,
         selected_path=None,
         waypoint_label=None,
@@ -800,8 +806,9 @@ class LidarCenterNet(nn.Module):
             loss.update(loss_bbox)
 
         if self.config.use_trajectory_prediction:
-            loss_trajectory = ...  # TODO: implement
-            loss.update({"loss_trajectories": loss_trajectory})
+            # Should return trajectories and traj confidences as a dict
+            loss_trajectory = self.trajectory_loss(pred_trajectories, gt_trajectories, trajectories_mask)
+            loss.update(loss_trajectory)
 
         return loss
 
