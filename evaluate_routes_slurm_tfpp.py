@@ -16,7 +16,7 @@ import ujson
 import argparse
 import sys
 
-CARLA_WAIT_TIME = 20  # seconds
+CARLA_WAIT_TIME = 40  # seconds
 
 
 def create_run_eval_bash(
@@ -92,7 +92,7 @@ python3 -u ${LEADERBOARD_ROOT}/leaderboard/leaderboard_evaluator_local.py \
 --record=${RECORD_PATH} \
 --resume=${RESUME} \
 --port=${PORT} \
---timeout=120 \
+--timeout=300 \
 --traffic-manager-port=${TM_PORT}
 """
         )
@@ -114,12 +114,13 @@ def make_jobsub_file(commands, job_number, exp_name, exp_root_name, partition):
 #SBATCH -e evaluation/{exp_root_name}/{exp_name}/run_files/logs/qsub_out{job_number}.log
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=8
+#SBATCH --cpus-per-task=4
 #SBATCH --mem=20gb
-#SBATCH --time=00-01:00:00
+#SBATCH --time=00-02:00:00
 #SBATCH --gres=gpu:1
-#SBATCH --constraint=(a100|h100)
+#SBATCH --constraint=(a100|h100|v100|p100)
 """
+# V100s and P100s seems to be enough
     for cmd in commands:
         qsub_template = (
             qsub_template
@@ -172,7 +173,7 @@ def main():
         help="Folder containing all the experiment folders.",
     )
     parser.add_argument(
-        "--code_root",  # aka. project root
+        "--code_root",  # aka. project root, not team code
         type=str,
         default="/cluster/work/andrebw/repos/temporal_garage",
         help="Root folder containing all the code folders.",
