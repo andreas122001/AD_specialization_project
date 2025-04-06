@@ -14,6 +14,7 @@ from transfuser import (
     TransformerDecoderLayerWithAttention,
     TransformerDecoderWithAttention,
 )
+from trajectory_head import TrajectoryDecoder
 from bev_encoder import BevEncoder
 from aim import AIMBackbone
 from center_net import LidarCenterNetHead
@@ -71,6 +72,9 @@ class LidarCenterNet(nn.Module):
         # prediction heads
         if self.config.detect_boxes:
             self.head = LidarCenterNetHead(self.config)
+
+        if self.config.use_trajectory_prediction:
+            self.trajectory_head = TrajectoryDecoder(n_dim=256, n_layers=1, n_queries=10, future_steps=6)
 
         if self.config.use_semantic:
             self.semantic_decoder = t_u.PerspectiveDecoder(
@@ -387,6 +391,7 @@ class LidarCenterNet(nn.Module):
                 embedded_dim=256, 
                 hidden_dim=self.config.temporal_hidden_dim,
                 n_heads=self.config.temporal_fusion_heads, 
+                dropout=0.1,
                 use_attn_weights=self.config.use_temporal_attn_weights,
                 learnable_init=self.config.use_learnable_historic_initialization,
             )
@@ -674,6 +679,10 @@ class LidarCenterNet(nn.Module):
         pred_bounding_box = None
         if self.config.detect_boxes:
             pred_bounding_box = self.head(bev_feature_grid)
+        
+        pred_trajectories = None
+        if self.config.use_trajectory_prediction:
+            pred_trajectories = self.trajectory_head(fused_features)
 
         # TODO: can we make this into a dict instead? Then we can jsut unpack "preds_dict" into compute_loss
         return (
@@ -684,6 +693,7 @@ class LidarCenterNet(nn.Module):
             pred_bev_semantic,
             pred_depth,
             pred_bounding_box,
+            pred_trajectories,
             attention_weights,
             pred_wp_1,
             selected_path,
@@ -700,6 +710,7 @@ class LidarCenterNet(nn.Module):
         pred_bev_semantic=None,
         pred_depth=None,
         pred_bounding_box=None,
+        pred_trajectories=None,
         pred_wp_1=None,
         selected_path=None,
         waypoint_label=None,
@@ -787,6 +798,10 @@ class LidarCenterNet(nn.Module):
             )
 
             loss.update(loss_bbox)
+
+        if self.config.use_trajectory_prediction:
+            loss_trajectory = ...  # TODO: implement
+            loss.update({"loss_trajectories": loss_trajectory})
 
         return loss
 

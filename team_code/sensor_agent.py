@@ -652,6 +652,7 @@ class SensorAgent(autonomous_agent.AutonomousAgent):
                     pred_bev_semantic,
                     pred_depth,
                     pred_bb_features,
+                    pred_trajectories,
                     attention_weights,
                     pred_wp_1,
                     selected_path,

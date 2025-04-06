@@ -6,7 +6,7 @@ from typing import Optional
 
 class MHATemporalFusion(nn.Module):
     def __init__(
-        self, embedded_dim: int, hidden_dim: int = 1024, n_heads: int = 1, use_attn_weights: bool = False, learnable_init: bool = True
+        self, embedded_dim: int, hidden_dim: int = 1024, n_heads: int = 1, dropout = 0.2, use_attn_weights: bool = False, learnable_init: bool = True
     ) -> None:
         """
         Args:
@@ -24,13 +24,18 @@ class MHATemporalFusion(nn.Module):
         self.historic_init = nn.Parameter(torch.zeros(1, 65, 256)) if learnable_init else torch.zeros(1, 65, 256)
 
         # Fusion layers
-        self.cross_attn = MultiheadAttention(embedded_dim, n_heads, dropout=0.2, batch_first=True)
-        self.self_attn = MultiheadAttention(embedded_dim, n_heads, dropout=0.2, batch_first=True)
+        self.cross_attn = MultiheadAttention(embedded_dim, n_heads, dropout=dropout, batch_first=True)
+        self.self_attn = MultiheadAttention(embedded_dim, n_heads, dropout=dropout, batch_first=True)
         self.mlp = nn.Sequential(
             nn.Linear(embedded_dim, hidden_dim),  # e.g. 256x1024
             nn.GELU(),  # Default for transformers
-            nn.Linear(hidden_dim, embedded_dim)  # e.g. 1024x256
+            nn.Dropout(dropout),
+            nn.Linear(hidden_dim, embedded_dim),  # e.g. 1024x256
+            nn.Dropout(dropout),
         )
+        self.historic_norm = nn.LayerNorm(embedded_dim)
+        self.cross_norm = nn.LayerNorm(embedded_dim)
+        self.self_norm = nn.LayerNorm(embedded_dim)
 
 
     def forward(
@@ -52,19 +57,28 @@ class MHATemporalFusion(nn.Module):
         if historic_feature is None:
             historic_feature = self.historic_init.expand(BZ, -1, -1).to(current_feature.device)
 
-        # Cross-attention
+        # Need to normalize the historic feat.,
+        # current feat. is already normalized in TF backbone output
+        historic_feature = self.historic_norm(historic_feature)
+
+        # Cross-attention, fuse current and historic features
         fused_feature, cross_weights = self.cross_attn(
             current_feature, historic_feature, historic_feature,
             need_weights=self.use_attn_weights, average_attn_weights=True,
         )
+        fused_feature = current_feature + fused_feature  # residual
+        fused_feature = self.cross_norm(fused_feature)
 
-        # Self-attention
-        fused_feature, self_weights = self.self_attn(
+        # Self-attention on fused features
+        fused_feature_tmp, self_weights = self.self_attn(
             fused_feature, fused_feature, fused_feature,
             need_weights=self.use_attn_weights, average_attn_weights=True,
         )
+        fused_feature = fused_feature_tmp + fused_feature  # residual
+        fused_feature = self.self_norm(fused_feature)
 
         # Token-wise MLP
-        fused_feature = self.mlp(fused_feature)
+        fused_feature_tmp = self.mlp(fused_feature)
+        fused_feature = fused_feature_tmp + fused_feature  # residual
 
         return fused_feature, (cross_weights, self_weights)
