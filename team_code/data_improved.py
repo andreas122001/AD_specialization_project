@@ -440,7 +440,7 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
             # Load future trajectory data
             for i in range(self.config.trajectory_pred_len):
                 trajectory_file = str(trajectories_root, encoding="utf-8") + (
-                    f"/{(sample_start + (1 + i)*self.config.trajectory_step_size):04}.json.gz"
+                    f"/{((sample_start+self.config.seq_len-1) + (i)*self.config.trajectory_step_size):04}.json.gz"
                 )
                 temporal_boxes_i = self._load_json_gz(trajectory_file)
                 loaded_trajectories.append(temporal_boxes_i)
@@ -838,115 +838,50 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
         N = self.config.max_num_trajectories
         F = self.config.trajectory_pred_len
 
-        all_timesteps = []  # id->pos mapping across all timesteps F
-
-        all_types = []
-        all_classes = []
-
-        # Needed for calculating relative transformation
-        # We need to go from coord. system of ego at t to the coord. system of ego at 0
-        ego_matrix_0 = np.array(current_measurement["ego_matrix"])
-        # ego_matrix_0_inv = np.linalg.inv(ego_matrix_0)
-
-        # We only want cars visible in the first frame
-        current_ids = [b['id'] for b in current_boxes]
-        print(current_ids)
+        # Only used to get the bounding box IDs
+        # Remove boxes outside bounds after aug
+        # These *should* now correspond to the BB targets from self._process_boxes(...)
+        _, _, valid_boxes = self.parse_bounding_boxes(
+            current_boxes, None, 
+            y_augmentation=y_augmentation, yaw_augmentation=yaw_augmentation, return_original=True
+        )
+        valid_ids = list(set([b['id'] for b in valid_boxes]))
 
         # Loop over all timesteps
+        all_timesteps = []  # id->pos mapping across all timesteps F
         for boxes in temporal_boxes:  # [F, n, ...]
 
-            # We need the ego matrix at t (or f or whatever) to calculate the relative transformation
-            # i.e. T_{t -> 0}
-            ego_matrix_t = None
-            for box in boxes:
-                if box["class"] == "ego_car":
-                    ego_matrix_t = np.array(box["matrix"])
-                    break
-
-            relative_transform = ego_matrix_0 @ np.linalg.inv(ego_matrix_t)
-
             # Parse the boxes
-            parsed_boxes, _, orig_boxes = self.parse_bounding_boxes(
-                boxes,
-                None,
+            parsed_boxes, orig_boxes = self.parse_bounding_boxes_traj(
+                future_boxes=boxes,  # current timestep future
+                reference=current_boxes,
                 y_augmentation=y_augmentation,
-                yaw_augmentation=yaw_augmentation,
-                return_original=True
+                yaw_augmentation=yaw_augmentation
             )
-            id_to_type = {}
-            id_to_class = {}
+
             # For all actors in this timestep, get their id and their relative position
             id_to_xy = {}
             for box_data, box in zip(parsed_boxes, orig_boxes):
-                if box['id'] not in current_ids:
-                    # We don't consider cars that were not in frame 0
-                    # Agent can't predict cars outside the BEV
-                    # TODO: (unless we want to force camera reliance?)
-                    continue
-
-                # Bounding boxes in the dataset are given relative to the ego at timestep *t*, E_t
-                # - The original boxes are relative to the vehicle itself at time *t*, V_t
-                # - A transform V_t->E_t was applied on the data
-                # We want bounding boxes relative to the ego at timestep *0*, E_0
-                # To get this, we need to get the inverse of V_t->E_t to get Pos_V_t, and then apply E_0 to get Pos_E_0.
-
-                # # First calculate T_{E_t -> V_t} = E_t^{-1}
-                # ego_matrix_t_inv = np.linalg.inv(ego_matrix_t)
-
-                # # Now we can calculate T_{V_t -> E_0} = E_0 @ (E_t^{-1})
-                # relative_transform = ego_matrix_0 @ ego_matrix_t_inv
-
-                # # Apply the relative transform to the vehicle position
-                # pos_E_t = np.array(box['matrix'])[:3, 3]  # [x, y, z]
-                # pos_E_0 = relative_transform @ np.array([pos_E_t[0], pos_E_t[1], 0, 1])
-                # pos = pos_E_0[:2]  # [x, y]
-
-                # # Put position in image system
-                # min_x, min_y = self.config.min_x, self.config.min_y
-                # pixels_per_meter = self.config.pixels_per_meter
-                # pos = pos * pixels_per_meter
-                # pos[0], pos[1] = pos[1], pos[0]  # swap axes
-                # # Compute pixel location that represents 0/0 in the image
-                # translation = np.array([-(min_x * pixels_per_meter), -(min_y * pixels_per_meter)])
-                # # Shift the coordinates so that the ego_vehicle is at the center of the image
-                # pos[:2] = pos[:2] + translation
-
-                position = box_data[:2]
-                coords_4d = np.array([position[0], position[1], 0, 1])
-                coords_4d = (relative_transform @ coords_4d.T)
-                position = coords_4d[:2]  # [x, y]
-
-                id_to_xy[box['id']] = position
-                id_to_type[box['id']] = box['type_id']
-                id_to_class[box['id']] = box['class']
+                id_to_xy[box['id']] = box_data[:2]  # [x, y]
             all_timesteps.append(id_to_xy)
 
-            all_types.append(id_to_type)
-            all_classes.append(id_to_class)
-
         # All actors present in *some* timestep:
-        all_ids = list(set([k for d in all_timesteps for k in d.keys()]))
+        # all_ids = list(set([k for d in all_timesteps for k in d.keys()]))
+        
+        # all_ids = list(set(all_timesteps[0]))  # only keys appearing in t=0
 
         # Create a mask for valid trajectories,
         # some actors enter and leave the bounds during the timesteps, these should be masked
         mask = np.zeros((F, N))
 
-        # for id_ in all_ids:
-        #     print(id_)
-        #     for d0, d1 in zip(all_types, all_classes):
-        #         print(d0.get(id_), d1.get(id_))
-        #     print()
-
         # For all actors, for all timesteps, get the position of that actor at that timestep
         # If position is found, append position and set mask to 1
         # Else, append zero and set mask to 0
         all_trajectories = []  # should be [n, F, 2]
-        for actor_i, actor in enumerate(all_ids[: N]): # [n]
+        for actor_i, actor in enumerate(valid_ids[: N]): # [min(n,N)], truncate if >N
             actor_traj = []
-            print()
             for t, d in enumerate(all_timesteps):  # [F, n]
                 pos = d.get(actor, None)
-                print(actor, pos)
                 if pos is not None:
                     actor_traj.append(pos)
                     mask[t, actor_i] = 1
@@ -954,8 +889,11 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
                     actor_traj.append(np.zeros((2)))
             all_trajectories.append(actor_traj)
 
+        # These are now Ego_0-aligned trajectories for all actors visible in any timestep
         all_trajectories = np.array(all_trajectories)  # [n, F, 2]
         mask = np.transpose(mask, (1,0))  # [F, n] -> [n, F]
+
+        # TODO: filter cars with mask=0 on first timestep
 
         # Pad all trajectories, we want [n, F, 2] to [N, F, 2]
         n = all_trajectories.shape[0]  # num actors
@@ -1457,11 +1395,95 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
                 )
             if return_original:
                 original_boxes.append(current_box)
+
             bboxes.append(bbox)
 
         if return_original:
             return bboxes, future_bboxes, original_boxes
         return bboxes, future_bboxes
+
+    def parse_bounding_boxes_traj(self, future_boxes, reference, y_augmentation=0.0, yaw_augmentation=0):
+        
+        # We need to find the ego matrix and yaw
+        ego_matrix = None
+        ego_yaw = None
+        # ego_car always exists
+        for ego_candiate in reference:
+            if ego_candiate["class"] == "ego_car":
+                ego_matrix = np.array(ego_candiate["matrix"])
+                ego_yaw = t_u.extract_yaw_from_matrix(ego_matrix)
+                break
+
+        # current_ids = [b['id'] for b in reference]
+        valid_current_ids = []
+        for box in reference:
+            bbox, height = self.get_bbox_label(
+                box, y_augmentation, yaw_augmentation
+            )
+            if not (
+                bbox[0] <= self.config.min_x
+                or bbox[0] >= self.config.max_x
+                or bbox[1] <= self.config.min_y
+                or bbox[1] >= self.config.max_y
+                or height <= self.config.min_z
+                or height >= self.config.max_z
+            ):
+                valid_current_ids.append(box['id'])
+
+        bboxes = []
+        original_boxes = []
+        for idx, sample_box in enumerate(future_boxes):
+            # (1) Filter out non-valid boxes
+            # Should we filter out cars not visible in the current frame?
+            condition0 = True#sample_box["id"] in valid_current_ids
+        
+            # Only detect movable objects
+            condition1 = sample_box["class"] in ["car", "walker"]
+            # Only detect boxes with enough lidar hits
+            condition2 = ("num_points" not in sample_box 
+                    or not (
+                        # Walker under walker threshold
+                        (sample_box["class"] == "walker"
+                            and sample_box.get("num_points", -1)
+                            <= self.config.num_lidar_hits_for_detection_walker)
+                        # Or car under car threshold
+                        or (sample_box["class"] == "car"
+                            and sample_box.get("num_points", -1)
+                            <= self.config.num_lidar_hits_for_detection_car)
+                    )
+            )
+            if not (condition0 and condition1 and condition2):
+                continue  # Ignore box
+            
+            # (2) Find the relative position (P_{E_t} -> P_{E_0})
+            # (P_{E_t} is relative to ego at t, P_{E_0} is relative to ego at 0)
+            sample_matrix = np.array(sample_box["matrix"])
+            relative_pos = t_u.get_relative_transform(
+                ego_matrix, sample_matrix
+            )
+            sample_yaw = t_u.extract_yaw_from_matrix(sample_matrix)
+            relative_yaw = t_u.normalize_angle(sample_yaw - ego_yaw)
+            sample_box["position"] = [*relative_pos[:3]]
+            sample_box["yaw"] = relative_yaw
+            
+            # (3) Convert to label array
+            # All future positions should be relative to t=0 aug
+            bbox, height = self.get_bbox_label(
+                sample_box, y_augmentation, yaw_augmentation
+            )
+
+            # (4) Transform to image system
+            bbox = t_u.bb_vehicle_to_image_system(
+                    bbox,
+                    self.config.pixels_per_meter,
+                    self.config.min_x,
+                    self.config.min_y,
+            )
+
+            original_boxes.append(sample_box)
+            bboxes.append(bbox)
+
+        return bboxes, original_boxes
 
     def quantize_box(self, boxes):
         """Quantizes a bounding box into bins and writes the index into the array a classification label"""
