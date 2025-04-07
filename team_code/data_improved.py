@@ -63,6 +63,7 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
         self.boxes = []
         self.future_boxes = []
         self.measurements = []
+        self.future_trajectories = []
         self.sample_start = []
 
         self.temporal_lidars = []
@@ -127,10 +128,21 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
 
                 # If we are using checkpoints to predict the path, we can use all of the frames, otherwise we need to subtract
                 # pred_len so that we have enough waypoint labels
-                last_frame = (
-                    num_seq
-                    - (self.config.seq_len - 1) * self.config.seq_step
-                    - (0 if not self.config.use_wp_gru else self.config.pred_len)
+                # last_frame = (
+                #     num_seq
+                #     - (self.config.seq_len - 1) * self.config.seq_step
+                #     - (0 if not self.config.use_wp_gru else self.config.pred_len)
+                # )
+
+                # Subtract maximum of the forcasting times
+                last_frame = num_seq - max(
+                    0, 
+                    (self.config.seq_len - 1) * self.config.seq_step, 
+                    (
+                        0 if not self.config.use_trajectory_prediction else 
+                        1 + (self.config.trajectory_pred_len) * self.config.trajectory_step_size
+                    ),
+                    (0 if not self.config.use_wp_gru else self.config.pred_len),
                 )
 
                 if last_frame <= first_frame:
@@ -156,7 +168,11 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
                     lidar = []
                     box = []
                     future_box = []
-                    measurement = []
+
+                    # we only store the root and compute the file name when loading,
+                    # because storing 40 * long string per sample can go out of memory.
+                    measurement = route_dir + "/measurements"
+                    future_trajectories = route_dir + "/boxes"
 
                     # Load sequence of frames (according to config.seq_len)
                     for idx in range(
@@ -219,9 +235,7 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
                         #     + f"/{(seq + idx + forcast_step):04}.json.gz"
                         # )
 
-                    # we only store the root and compute the file name when loading,
-                    # because storing 40 * long string per sample can go out of memory.
-                    measurement.append(route_dir + "/measurements")
+
 
                     if estimate_class_distributions:
                         measurements_i = self._load_json_gz(
@@ -285,6 +299,7 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
                     self.boxes.append(box)
                     self.future_boxes.append(future_box)
                     self.measurements.append(measurement)
+                    self.future_trajectories.append(future_trajectories)
                     self.sample_start.append(seq)
 
         if estimate_class_distributions:
@@ -353,6 +368,7 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
         self.boxes = np.array(self.boxes).astype(np.string_)
         self.future_boxes = np.array(self.future_boxes).astype(np.string_)
         self.measurements = np.array(self.measurements).astype(np.string_)
+        self.future_trajectories = np.array(self.future_trajectories).astype(np.string_)
 
         self.temporal_lidars = np.array(self.temporal_lidars).astype(np.string_)
         self.temporal_measurements = np.array(self.temporal_measurements).astype(
@@ -401,17 +417,34 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
             temporal_measurements = self.temporal_measurements[index]
 
         # we need to calculate the paths, since they are too large to put in the index
-        measurement_root = self.measurements[index][0]
+        measurement_root = self.measurements[index]
+        trajectories_root = self.future_trajectories[index]
         sample_start = self.sample_start[index]
 
         # Since we load measurements for future time steps, we load and store them separately
         loaded_measurements = []
         for i in range(self.config.seq_len):
             measurement_file = str(measurement_root, encoding="utf-8") + (
-                f"/{(sample_start + i):04}.json.gz"
+                f"/{(sample_start + i*self.config.seq_step):04}.json.gz"
             )
             measurements_i = self._load_json_gz(measurement_file)
             loaded_measurements.append(measurements_i)
+
+        # For lidar alignment, we need the current frame
+        # TODO: but what is "current" if temporal frames are processed independently?
+        current_measurement = loaded_measurements[self.config.seq_len - 1]  # last
+
+        # Same for trajectories
+        loaded_trajectories = []
+        if self.config.use_trajectory_prediction:
+            # Load future trajectory data
+            for i in range(self.config.trajectory_pred_len):
+                trajectory_file = str(trajectories_root, encoding="utf-8") + (
+                    f"/{(sample_start + (1 + i)*self.config.trajectory_step_size):04}.json.gz"
+                )
+                temporal_boxes_i = self._load_json_gz(trajectory_file)
+                loaded_trajectories.append(temporal_boxes_i)
+
         # If we were to use the GRU for WP prediction, we need the future measurements
         # (is how I interpret this code at least)
         if self.config.use_wp_gru:
@@ -419,7 +452,7 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
             start = self.config.seq_len
             for i in range(start, end, self.config.wp_dilation):
                 measurement_file = str(measurement_root, encoding="utf-8") + (
-                    f"/{(sample_start + i):04}.json.gz"
+                    f"/{(sample_start + i*self.config.seq_step):04}.json.gz"
                 )
                 measurements_i = self._load_json_gz(measurement_file)
                 loaded_measurements.append(measurements_i)
@@ -452,7 +485,7 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
         loaded_depth = []
         loaded_lidars = []
         loaded_boxes = []
-        loaded_future_boxes = []  # TODO: can potentially use for trajectory prediction
+        loaded_future_boxes = []
         # bounding box related data
         box_targets = []
         avg_factors = []
@@ -466,9 +499,6 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
         target_speed_seq = []
         target_speed_twohot_seq = []
 
-        # For lidar alignment, we need the current frame
-        # TODO: but what is "current" if temporal frames are processed independently?
-        current_measurement = loaded_measurements[self.config.seq_len - 1]  # last
         # TODO:
         #   maybe ralignment should be turned off if we use a sequence?
         #   It kinda only makes sense if we input the whole sequence to the model
@@ -725,6 +755,21 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
             )
             data["temporal_lidar"] = np.transpose(temporal_lidar_bev, (2, 0, 1))
 
+        if self.config.use_trajectory_prediction:
+            # TODO, this is a bit stupid, since we could get it from above
+            box_path = str(boxes[self.config.seq_len - 1], encoding="utf-8")
+            current_boxes = self._load_json_gz(box_path)
+
+            traj, mask = self._process_trajectories(
+                loaded_trajectories,
+                current_boxes=current_boxes,
+                current_measurement=current_measurement,
+                y_augmentation=aug_translation,
+                yaw_augmentation=aug_rotation,
+            )
+            data["trajectories"] = traj
+            data["trajectories_mask"] = mask
+
         # if self.config.use_wp_gru:
         #     # TODO we can ignore this
         #     waypoints = self.get_waypoints(
@@ -738,7 +783,7 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
         # Finally, if seq==1, remove the seq dimension
         if self.config.seq_len == 1:
             data = {
-                k: v.squeeze(0) if k not in ["temporal_lidar", "temporal_rgb"] else v
+                k: v.squeeze(0) if k not in ["temporal_lidar", "temporal_rgb", "trajectories", "trajectories_mask"] else v
                 for k, v in data.items()
             }
 
@@ -784,6 +829,140 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
             interpolation=cv2.INTER_LINEAR,
         )
         return depth_array
+
+    def _process_trajectories(self, temporal_boxes, current_boxes, current_measurement, y_augmentation=0.0, yaw_augmentation=0.0):
+        
+        # N: max number of boxes
+        # n: number of actual boxes
+        # F: future timesteps
+        N = self.config.max_num_trajectories
+        F = self.config.trajectory_pred_len
+
+        all_timesteps = []  # id->pos mapping across all timesteps F
+
+        all_types = []
+        all_classes = []
+
+        # Needed for calculating relative transformation
+        # We need to go from coord. system of ego at t to the coord. system of ego at 0
+        ego_matrix_0 = np.array(current_measurement["ego_matrix"])
+        # ego_matrix_0_inv = np.linalg.inv(ego_matrix_0)
+
+        # We only want cars visible in the first frame
+        current_ids = [b['id'] for b in current_boxes]
+        print(current_ids)
+
+        # Loop over all timesteps
+        for boxes in temporal_boxes:  # [F, n, ...]
+
+            # We need the ego matrix at t (or f or whatever) to calculate the relative transformation
+            # i.e. T_{t -> 0}
+            ego_matrix_t = None
+            for box in boxes:
+                if box["class"] == "ego_car":
+                    ego_matrix_t = np.array(box["matrix"])
+                    break
+
+            relative_transform = ego_matrix_0 @ np.linalg.inv(ego_matrix_t)
+
+            # Parse the boxes
+            parsed_boxes, _, orig_boxes = self.parse_bounding_boxes(
+                boxes,
+                None,
+                y_augmentation=y_augmentation,
+                yaw_augmentation=yaw_augmentation,
+                return_original=True
+            )
+            id_to_type = {}
+            id_to_class = {}
+            # For all actors in this timestep, get their id and their relative position
+            id_to_xy = {}
+            for box_data, box in zip(parsed_boxes, orig_boxes):
+                if box['id'] not in current_ids:
+                    # We don't consider cars that were not in frame 0
+                    # Agent can't predict cars outside the BEV
+                    # TODO: (unless we want to force camera reliance?)
+                    continue
+
+                # Bounding boxes in the dataset are given relative to the ego at timestep *t*, E_t
+                # - The original boxes are relative to the vehicle itself at time *t*, V_t
+                # - A transform V_t->E_t was applied on the data
+                # We want bounding boxes relative to the ego at timestep *0*, E_0
+                # To get this, we need to get the inverse of V_t->E_t to get Pos_V_t, and then apply E_0 to get Pos_E_0.
+
+                # # First calculate T_{E_t -> V_t} = E_t^{-1}
+                # ego_matrix_t_inv = np.linalg.inv(ego_matrix_t)
+
+                # # Now we can calculate T_{V_t -> E_0} = E_0 @ (E_t^{-1})
+                # relative_transform = ego_matrix_0 @ ego_matrix_t_inv
+
+                # # Apply the relative transform to the vehicle position
+                # pos_E_t = np.array(box['matrix'])[:3, 3]  # [x, y, z]
+                # pos_E_0 = relative_transform @ np.array([pos_E_t[0], pos_E_t[1], 0, 1])
+                # pos = pos_E_0[:2]  # [x, y]
+
+                # # Put position in image system
+                # min_x, min_y = self.config.min_x, self.config.min_y
+                # pixels_per_meter = self.config.pixels_per_meter
+                # pos = pos * pixels_per_meter
+                # pos[0], pos[1] = pos[1], pos[0]  # swap axes
+                # # Compute pixel location that represents 0/0 in the image
+                # translation = np.array([-(min_x * pixels_per_meter), -(min_y * pixels_per_meter)])
+                # # Shift the coordinates so that the ego_vehicle is at the center of the image
+                # pos[:2] = pos[:2] + translation
+
+                position = box_data[:2]
+                coords_4d = np.array([position[0], position[1], 0, 1])
+                coords_4d = (relative_transform @ coords_4d.T)
+                position = coords_4d[:2]  # [x, y]
+
+                id_to_xy[box['id']] = position
+                id_to_type[box['id']] = box['type_id']
+                id_to_class[box['id']] = box['class']
+            all_timesteps.append(id_to_xy)
+
+            all_types.append(id_to_type)
+            all_classes.append(id_to_class)
+
+        # All actors present in *some* timestep:
+        all_ids = list(set([k for d in all_timesteps for k in d.keys()]))
+
+        # Create a mask for valid trajectories,
+        # some actors enter and leave the bounds during the timesteps, these should be masked
+        mask = np.zeros((F, N))
+
+        # for id_ in all_ids:
+        #     print(id_)
+        #     for d0, d1 in zip(all_types, all_classes):
+        #         print(d0.get(id_), d1.get(id_))
+        #     print()
+
+        # For all actors, for all timesteps, get the position of that actor at that timestep
+        # If position is found, append position and set mask to 1
+        # Else, append zero and set mask to 0
+        all_trajectories = []  # should be [n, F, 2]
+        for actor_i, actor in enumerate(all_ids[: N]): # [n]
+            actor_traj = []
+            print()
+            for t, d in enumerate(all_timesteps):  # [F, n]
+                pos = d.get(actor, None)
+                print(actor, pos)
+                if pos is not None:
+                    actor_traj.append(pos)
+                    mask[t, actor_i] = 1
+                else:
+                    actor_traj.append(np.zeros((2)))
+            all_trajectories.append(actor_traj)
+
+        all_trajectories = np.array(all_trajectories)  # [n, F, 2]
+        mask = np.transpose(mask, (1,0))  # [F, n] -> [n, F]
+
+        # Pad all trajectories, we want [n, F, 2] to [N, F, 2]
+        n = all_trajectories.shape[0]  # num actors
+        all_trajectories_padded = np.zeros((N, F, 2))
+        all_trajectories_padded[: min(n,N)] = all_trajectories[: min(n,N)]  
+
+        return all_trajectories_padded, mask
 
     def _process_boxes(self, boxes_i, future_boxes_i, aug_translation, aug_rotation):
         bounding_boxes, future_bounding_boxes = self.parse_bounding_boxes(
@@ -1160,7 +1339,7 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
         return bbox, bbox_dict["position"][2]
 
     def parse_bounding_boxes(
-        self, boxes, future_boxes=None, y_augmentation=0.0, yaw_augmentation=0
+        self, boxes, future_boxes=None, y_augmentation=0.0, yaw_augmentation=0, return_original=False
     ):
 
         if self.config.use_plant and future_boxes is not None:
@@ -1173,7 +1352,7 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
                     ego_matrix = np.array(ego_candiate["matrix"])
                     ego_yaw = t_u.extract_yaw_from_matrix(ego_matrix)
                     break
-
+        original_boxes = []
         bboxes = []
         future_bboxes = []
         for idx, current_box in enumerate(boxes):
@@ -1276,7 +1455,12 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
                     self.config.min_x,
                     self.config.min_y,
                 )
+            if return_original:
+                original_boxes.append(current_box)
             bboxes.append(bbox)
+
+        if return_original:
+            return bboxes, future_bboxes, original_boxes
         return bboxes, future_bboxes
 
     def quantize_box(self, boxes):
@@ -1528,6 +1712,7 @@ if __name__ == "__main__":
     config.seq_len = 1
     config.lidar_seq_len = 1
     config.img_seq_len = 1
+    config.use_trajectory_prediction = True
     config.initialize(
         root_dir=[
             "/cluster/work/andrebw/repos/temporal_garage/results/data/garage_v2_2025_03_15/data"
@@ -1539,7 +1724,7 @@ if __name__ == "__main__":
         estimate_class_distributions=config.estimate_class_distributions,
         estimate_sem_distribution=config.estimate_semantic_distribution,
     )
-    sample = dataset.__getitem__(5)
+    sample = dataset.__getitem__(501)
     print("\nShapes:")
     for k, v in sample.items():
         if isinstance(v, np.ndarray):
