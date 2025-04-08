@@ -853,7 +853,7 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
 
             # Parse the boxes
             parsed_boxes, orig_boxes = self.parse_bounding_boxes_traj(
-                future_boxes=boxes,  # current timestep future
+                future_boxes=boxes,  # current (0th) timestep future
                 reference=current_boxes,
                 y_augmentation=y_augmentation,
                 yaw_augmentation=yaw_augmentation
@@ -862,45 +862,32 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
             # For all actors in this timestep, get their id and their relative position
             id_to_xy = {}
             for box_data, box in zip(parsed_boxes, orig_boxes):
-                id_to_xy[box['id']] = box_data[:2]  # [x, y]
+                if box['id'] in valid_ids:
+                    id_to_xy[box['id']] = box_data[:2]  # [x, y]
             all_timesteps.append(id_to_xy)
 
-        # All actors present in *some* timestep:
-        # all_ids = list(set([k for d in all_timesteps for k in d.keys()]))
-        
-        # all_ids = list(set(all_timesteps[0]))  # only keys appearing in t=0
+        # Create a mask for valid trajectory points,
+        # some actors disappear/reappear in future timesteps (bc. random bb selection), mask those points out
+        mask = np.zeros((N, F))
 
-        # Create a mask for valid trajectories,
-        # some actors enter and leave the bounds during the timesteps, these should be masked
-        mask = np.zeros((F, N))
-
-        # For all actors, for all timesteps, get the position of that actor at that timestep
+        # For all actors (up to a limit), for all timesteps, get the position of that actor at that timestep
         # If position is found, append position and set mask to 1
         # Else, append zero and set mask to 0
-        all_trajectories = []  # should be [n, F, 2]
-        for actor_i, actor in enumerate(valid_ids[: N]): # [min(n,N)], truncate if >N
+        all_trajectories = np.zeros((N, F, 2))  # [N, F, 2]
+        for actor_n, actor in enumerate(valid_ids[: N]): # [min(n,N)], truncate if >N
             actor_traj = []
-            for t, d in enumerate(all_timesteps):  # [F, n]
-                pos = d.get(actor, None)
+            for t, id_to_pos in enumerate(all_timesteps):  # [F, n]
+                pos = id_to_pos.get(actor, None)
                 if pos is not None:
                     actor_traj.append(pos)
-                    mask[t, actor_i] = 1
+                    mask[actor_n, t] = 1
+                # If actor does not exists in this timestep, set point to (0,0) and mask to 0
                 else:
                     actor_traj.append(np.zeros((2)))
-            all_trajectories.append(actor_traj)
+            all_trajectories[actor_n] = actor_traj
 
-        # These are now Ego_0-aligned trajectories for all actors visible in any timestep
-        all_trajectories = np.array(all_trajectories)  # [n, F, 2]
-        mask = np.transpose(mask, (1,0))  # [F, n] -> [n, F]
-
-        # TODO: filter cars with mask=0 on first timestep
-
-        # Pad all trajectories, we want [n, F, 2] to [N, F, 2]
-        n = all_trajectories.shape[0]  # num actors
-        all_trajectories_padded = np.zeros((N, F, 2))
-        all_trajectories_padded[: min(n,N)] = all_trajectories[: min(n,N)]  
-
-        return all_trajectories_padded, mask
+        # These are now Ego_0-aligned trajectories for all actors visible in 0th timestep
+        return all_trajectories, mask
 
     def _process_boxes(self, boxes_i, future_boxes_i, aug_translation, aug_rotation):
         bounding_boxes, future_bounding_boxes = self.parse_bounding_boxes(
@@ -1414,29 +1401,10 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
                 ego_yaw = t_u.extract_yaw_from_matrix(ego_matrix)
                 break
 
-        # current_ids = [b['id'] for b in reference]
-        valid_current_ids = []
-        for box in reference:
-            bbox, height = self.get_bbox_label(
-                box, y_augmentation, yaw_augmentation
-            )
-            if not (
-                bbox[0] <= self.config.min_x
-                or bbox[0] >= self.config.max_x
-                or bbox[1] <= self.config.min_y
-                or bbox[1] >= self.config.max_y
-                or height <= self.config.min_z
-                or height >= self.config.max_z
-            ):
-                valid_current_ids.append(box['id'])
-
         bboxes = []
         original_boxes = []
         for idx, sample_box in enumerate(future_boxes):
-            # (1) Filter out non-valid boxes
-            # Should we filter out cars not visible in the current frame?
-            condition0 = True#sample_box["id"] in valid_current_ids
-        
+            # (1) Filter out non-valid boxes        
             # Only detect movable objects
             condition1 = sample_box["class"] in ["car", "walker"]
             # Only detect boxes with enough lidar hits
@@ -1452,7 +1420,7 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
                             <= self.config.num_lidar_hits_for_detection_car)
                     )
             )
-            if not (condition0 and condition1 and condition2):
+            if not (condition1 and condition2):
                 continue  # Ignore box
             
             # (2) Find the relative position (P_{E_t} -> P_{E_0})
