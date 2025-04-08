@@ -536,15 +536,33 @@ def main():
     parser.add_argument(
         "--seq_len",
         type=int,
-        default=1,
+        default=config.seq_len,
         help="sequence length of data for recurrent training",
     )
     parser.add_argument("--validation", action="store_true", help="use validation set")
     parser.add_argument(
         "--use_recurrent_training",
         type=bool,
-        default=False,
+        default=config.use_recurrent_training,
         help="use recurrent training (train like an RNN, high compute)",
+    )    
+    parser.add_argument(
+        "--use_trajectory_prediction",
+        type=int,
+        default=config.use_trajectory_prediction,
+        help="use a trajectory prediction head to predict other objects trajectories",
+    )    
+    parser.add_argument(
+        "--trajectory_pred_len",
+        type=int,
+        default=config.trajectory_pred_len,
+        help="prediction length of other trajectories",
+    )    
+    parser.add_argument(
+        "--trajectory_step_size",
+        type=int,
+        default=config.trajectory_step_size,
+        help="how many frames between each trajectory point",
     )
 
     args = parser.parse_args()
@@ -722,6 +740,9 @@ def main():
         print(f"config.crop_image: {config.crop_image}", flush=True)
         print(f"config.cropped_height: {config.cropped_height}", flush=True)
         print(f"config.cropped_width: {config.cropped_width}", flush=True)
+        print(f"config.use_trajectory_prediction: {config.use_trajectory_prediction}", flush=True)
+        print(f"config.trajectory_pred_len: {config.trajectory_pred_len}", flush=True)
+        print(f"config.trajectory_step_size: {config.trajectory_step_size}", flush=True)
 
     # Create model and optimizers
     if config.use_plant:
@@ -810,7 +831,7 @@ def main():
     model_parameters = filter(lambda p: p.requires_grad, model.parameters())
     num_params = sum(np.prod(p.size()) for p in model_parameters)
     if rank == 0:
-        print("Total trainable parameters: ", num_params)
+        print(f"Total trainable parameters: {num_params:_}")
 
     g_cuda = torch.Generator(device="cpu")
     g_cuda.manual_seed(torch.initial_seed())
@@ -987,7 +1008,11 @@ class Engine(object):
             data = {
                 k: (
                     v[:, -1]
-                    if k not in ["rgb", "lidar", "target_point", "speed", "command"]
+                    if k not in [
+                        "rgb", "lidar", "target_point", 
+                        "speed", "command", "trajectories", 
+                        "trajectories_mask"
+                    ]
                     else v
                 )
                 for k, v in data.items()
@@ -1098,6 +1123,9 @@ class Engine(object):
                 lidar = data["temporal_lidar"].to(self.device, dtype=torch.float32)
             else:
                 lidar = data["lidar"].to(self.device, dtype=torch.float32)
+            
+            gt_trajectories = None
+            trajectories_mask = None
             if self.config.use_trajectory_prediction:
                 gt_trajectories = data["trajectories"].to(self.device, dtype=torch.float32)
                 trajectories_mask = data["trajectories_mask"].to(self.device, dtype=torch.float32)
@@ -1111,6 +1139,7 @@ class Engine(object):
                 pred_depth,
                 pred_bounding_box,
                 pred_trajectories,
+                pred_trajectory_confidence,
                 _,
                 pred_wp_1,
                 selected_path,
@@ -1154,8 +1183,9 @@ class Engine(object):
                 pred_depth=pred_depth,
                 pred_bounding_box=pred_bounding_box,
                 pred_trajectories=pred_trajectories,
-                gt_trajectories=gt_trajectories,
-                trajectories_mask=trajectories_mask
+                pred_trajectory_confidence=pred_trajectory_confidence,
+                trajectories_label=gt_trajectories,
+                trajectories_mask=trajectories_mask,
                 waypoint_label=ego_waypoint,
                 target_speed_label=target_speed,
                 checkpoint_label=checkpoint,

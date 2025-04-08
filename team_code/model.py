@@ -75,7 +75,12 @@ class LidarCenterNet(nn.Module):
             self.head = LidarCenterNetHead(self.config)
 
         if self.config.use_trajectory_prediction:
-            self.trajectory_head = TrajectoryDecoder(n_dim=256, n_layers=1, n_queries=10, future_steps=6)
+            self.trajectory_head = TrajectoryDecoder(
+                n_dim=256, 
+                n_layers=1, 
+                n_queries=self.config.max_num_trajectories, 
+                future_steps=self.config.trajectory_pred_len
+            )
 
         if self.config.use_semantic:
             self.semantic_decoder = t_u.PerspectiveDecoder(
@@ -396,7 +401,7 @@ class LidarCenterNet(nn.Module):
                 hidden_dim=self.config.temporal_hidden_dim,
                 n_heads=self.config.temporal_fusion_heads, 
                 dropout=0.1,
-                use_attn_weights=self.config.use_temporal_attn_weights,
+                use_attn_weights=self.config.return_temporal_attn_weights,
                 learnable_init=self.config.use_learnable_historic_initialization,
             )
 
@@ -685,8 +690,10 @@ class LidarCenterNet(nn.Module):
             pred_bounding_box = self.head(bev_feature_grid)
         
         pred_trajectories = None
+        pred_trajectory_confidence = None
         if self.config.use_trajectory_prediction:
-            pred_trajectories = self.trajectory_head(fused_features)
+            (pred_trajectories, 
+            pred_trajectory_confidence) = self.trajectory_head(fused_features)
 
         # TODO: can we make this into a dict instead? Then we can jsut unpack "preds_dict" into compute_loss
         return (
@@ -698,6 +705,7 @@ class LidarCenterNet(nn.Module):
             pred_depth,
             pred_bounding_box,
             pred_trajectories,
+            pred_trajectory_confidence,
             attention_weights,
             pred_wp_1,
             selected_path,
@@ -715,7 +723,8 @@ class LidarCenterNet(nn.Module):
         pred_depth=None,
         pred_bounding_box=None,
         pred_trajectories=None,
-        gt_trajectories=None,
+        pred_trajectory_confidence=None,
+        trajectories_label=None,
         trajectories_mask=None,
         pred_wp_1=None,
         selected_path=None,
@@ -807,7 +816,11 @@ class LidarCenterNet(nn.Module):
 
         if self.config.use_trajectory_prediction:
             # Should return trajectories and traj confidences as a dict
-            loss_trajectory = self.trajectory_loss(pred_trajectories, gt_trajectories, trajectories_mask)
+            loss_trajectory = self.trajectory_loss(
+                outputs=(pred_trajectories, pred_trajectory_confidence),
+                targets=trajectories_label, 
+                mask=trajectories_mask
+            )
             loss.update(loss_trajectory)
 
         return loss

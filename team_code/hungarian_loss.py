@@ -99,7 +99,7 @@ class HungarianLoss(torch.nn.Module):
         loss_conf = self.confidence_loss(conf_logits, conf_targets)
 
         losses = {
-            "loss_traj": avg_traj_loss,
-            "loss_traj_confidence": loss_conf,
+            "loss_trajectories": avg_traj_loss,
+            "loss_trajectory_confidence": loss_conf,
         }
         return losses

@@ -18,7 +18,8 @@ torchrun --nnodes=1 --nproc_per_node=1 --max_restarts=0 --rdzv_id=$SLURM_JOB_ID 
     --epochs 31 \
     --batch_size 8 \
     --use_recurrent_training 1 \
-    --seq_len 4 \
+    --use_trajectory_prediction 1 \
+    --seq_len 2 \
     --lr 3e-4 \
     --setting 13_withheld \
     --root_dir $PROJECT_ROOT/results/data/$DATASET/data \

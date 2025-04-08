@@ -556,6 +556,7 @@ class GlobalConfig:
             "loss_semantic": 1.0,
             "loss_bev_semantic": 1.0,
             "loss_trajectories": 1.0,
+            "loss_trajectory_confidence": 1.0,
             "loss_depth": 1.0,
             "loss_center_heatmap": 1.0,
             "loss_wh": 1.0,
@@ -712,9 +713,9 @@ class GlobalConfig:
 
         # Temporal fusion
         self.use_temporal_fusion = True  # Enables streaming-based temporal fusion in the model
-        self.use_recurrent_training = True  # Disables backpropagation through temporal features, avoids model unwrapping during training
+        self.use_recurrent_training = True  # If false, disables backpropagation through temporal features, avoids model unwrapping during training (NOTE: not implemented, always True)
         self.backprop_every_step = False  # TODO implement, should do backprop on every timestep, might not be sensible though
-        self.use_temporal_attn_weights = False  # Whether to return the attention weights of the temporal fusion module, for attn. vis.
+        self.return_temporal_attn_weights = False  # Whether to return the attention weights of the temporal fusion module, for attn. vis.
         self.temporal_fusion_heads = 4  # per-head dim would be 64 -> 256/4
         self.temporal_hidden_dim = 512
         self.use_learnable_historic_initialization = True  # Whether to learn initial historic tokens, else use zeros
@@ -722,7 +723,7 @@ class GlobalConfig:
         self.use_trajectory_prediction = False  # Whether to use trajectory prediction as auxiliary task
         self.trajectory_pred_len = 6
         self.trajectory_step_size = 1
-        self.max_num_trajectories = 20
+        self.max_num_trajectories = 20  # similar to self.max_num_bbs, limits the number of trajectories to predict
 
         # This used to be default True for seq_len > 1, but can now be disabled to make it comparable to the original TransFuser++, or for using other future prediction methods
         self.use_velocity_brake_head = False  # Whether to predict velocity and braking for bbs in CenterNet, can not be used with seq_len=1 (makes not sense then)

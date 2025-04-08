@@ -22,6 +22,7 @@ class TrajectoryDecoderLayer(nn.Module):
         self.query_norm = nn.LayerNorm(n_dim)
         self.features_norm = nn.LayerNorm(n_dim)
         self.cross_norm = nn.LayerNorm(n_dim)
+        self.self_norm = nn.LayerNorm(n_dim)
 
     def forward(self, query, features):
 
@@ -33,6 +34,11 @@ class TrajectoryDecoderLayer(nn.Module):
         attn_output, _ = self.cross_attn(query, features, features, need_weights=False)
         query = query + attn_output  # residual
         query = self.cross_norm(query)  # post-cross attention layer norm
+
+        # Cross attention, vehicle queries attending to temporal features
+        attn_output, _ = self.self_attn(query, query, query, need_weights=False)
+        query = query + attn_output  # residual
+        query = self.self_norm(query)  # post-cross attention layer norm
 
         # Token-wise dense layer, 
         ff_output = self.mlp(query)
