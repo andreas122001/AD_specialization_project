@@ -726,6 +726,8 @@ class GlobalConfig:
         self.trajectory_step_size = 1
         self.max_num_trajectories = 20  # similar to self.max_num_bbs, limits the number of trajectories to predict
 
+        self.use_dataset_pruning = True  # If true, prune the dataset of unimportant samples (see data.CARLA_Data._pruning_heuristic)
+
         # This used to be default True for seq_len > 1, but can now be disabled to make it comparable to the original TransFuser++, or for using other future prediction methods
         self.use_velocity_brake_head = False  # Whether to predict velocity and braking for bbs in CenterNet, can not be used with seq_len=1 (makes not sense then)
 

@@ -152,26 +152,35 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
                 for seq in range(first_frame, last_frame):
                     if seq % config.train_sampling_rate != 0:
                         continue
-                    
+
+                    # Prune this sequence if it is deemed uninteresting
+                    if self.config.use_dataset_pruning:
+                        measurements = []
+                        end = seq + self.config.seq_len * self.config.seq_step
+                        for seq_i in range(seq, end, self.config.seq_step):
+                            measurement_file = route_dir + "/" + SensorFolder.MEASUREMENTS.value
+                            measurements_i = self._load_json_gz(
+                                measurement_file + f"/{(seq_i):04}.json.gz"
+                            )
+                            measurements.append(measurements_i)
+
+                        if not self._pruning_heuristic(measurements):
+                            continue
+
                     # Store only the scenario + route + sample_start of the current index
                     # When loading, we only need to know where to start, and which route it is
                     scenario = sub_root.split("/")[-1]
                     self.route_root.append(f"{scenario}/{route}")
                     self.sample_start.append(seq)
 
-                    # Load sequence of frames (according to config.seq_len)
                     if estimate_sem_distribution:
-                        for idx in range(
-                            0,
-                            self.config.seq_len * self.config.seq_step,
-                            self.config.seq_step,
-                        ):
-                            semantics_i = self.converter[
-                                self._load_png(semantic[-1], crop=False)
-                            ]  # pylint: disable=locally-disabled, unsubscriptable-object
-                            self.semantic_distribution.extend(
-                                semantics_i.flatten().tolist()
-                            )
+                        semantics_file = route_dir + "/" + SensorFolder.SEMANTICS.value
+                        semantics_i = self.converter[
+                            self._load_png(semantics_file, crop=False)
+                        ]  # pylint: disable=locally-disabled, unsubscriptable-object
+                        self.semantic_distribution.extend(
+                            semantics_i.flatten().tolist()
+                        )
 
                     if estimate_class_distributions:
                         measurement = route_dir + "/" + SensorFolder.MEASUREMENTS.value
@@ -849,6 +858,19 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
         condition4 = results_route["status"] == "Failed - Simulation crashed"
         condition5 = results_route["status"] == "Failed - Agent crashed"
         return not (condition1 or condition2 or condition3 or condition4 or condition5)
+
+    def _pruning_heuristic(self, measurements: list[dict]):
+        # Randomy retain 14% of the sequences
+        if random.random() <= 0.14:
+            return True
+
+        speed_threshold = 0.1
+        angle_threshold = 0.5 * (3.14/ 180)
+        speeds = [m['speed'] for m in measurements]
+        angles = [m['steer'] for m in measurements]
+
+        return abs(max(speeds) - min(speeds)) > speed_threshold \
+            or abs(max(angles) - min(angles)) > angle_threshold
 
     def get_targets(self, gt_bboxes, feat_h, feat_w):
         """
