@@ -521,7 +521,7 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
             # == Load waypoints
             if self.config.use_wp_gru:
                 waypoints = self.get_waypoints(
-                    loaded_measurements[offset:offset+self.config.pred_len-1],
+                    loaded_measurements[offset:offset+self.config.pred_len],
                     y_augmentation=aug_translation,
                     yaw_augmentation=aug_rotation
                 )
