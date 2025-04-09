@@ -138,12 +138,12 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
                     0, 
                     (self.config.seq_len - 1) * self.config.seq_step, 
                     (self.config.trajectory_pred_len * self.config.trajectory_step_size) if self.config.use_trajectory_prediction else 0,
-                    (0 if not self.config.use_wp_gru else self.config.pred_len),
+                    (self.config.pred_len * self.config.wp_dilation) if self.config.use_wp_gru else 0,
                 )
 
                 # Skip routes that are too short for a full seq
                 if last_frame <= first_frame:
-                    warnings.warn(f"Route was skipped due to not having enough frames for one full sequence (last_frame[{last_frame}]<=first_frame[{first_Frame}]).")
+                    warnings.warn(f"Route was skipped due to not having enough frames for one full sequence (last_frame[{last_frame}]<=first_frame[{first_frame}]).")
                     skipped_routes += 1
                     continue
 
@@ -314,22 +314,20 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
             loaded_measurements.append(measurements_i)
 
         # For lidar alignment, we need the current frame
-        current_measurement = loaded_measurements[self.config.seq_len - 1]  # last
-
-
-        
+        current_measurement = loaded_measurements[self.config.seq_len - 1]  # the present/current measurement
+    
         # If using GRU WP prediction, append further future measurements
         if self.config.use_wp_gru:
-            start = sample_start + self.config.seq_len
+            # Start: end of sequence
+            # End: end of sequence + future time steps
+            start = sample_start + (self.config.seq_len - 1) * self.config.seq_step
             end = start + self.config.pred_len * self.config.wp_dilation
             for seq_i in range(start, end, self.config.wp_dilation):
                 measurement_file = measurement_root + f"/{seq_i:04}.json.gz"
                 measurements_i = self._load_json_gz(measurement_file)
                 loaded_measurements.append(measurements_i)
 
-
-
-        # Here we load all inputs as sequences of frames
+        # Below we load all inputs as sequences of frames
         # This would allow a model to process the data sequentially if seq_len > 1
         # To avoid complications, temporal rgb and temporal lidar are loaded in a separate loop
         # Temporal rgb and temporal lidar should not be used with seq_len > 1
@@ -344,12 +342,6 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
         target_point_seq = []
         target_point_next_seq = []
 
-        # TODO:
-        #   maybe ralignment should be turned off if we use a sequence?
-        #   It kinda only makes sense if we input the whole sequence to the model
-        #   Like early temporal fusion
-        #   With temporal streaming, the frames would realign to an unknown future frame, which doesn't make sense
-        #   Perhaps this should be discussed in more depth
         # Assume not aug, and update during temporal input loading
         apply_aug = False
         aug_rotation = 0
@@ -446,6 +438,7 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
         future_boxes_seq = []
         box_targets_seq = []
         avg_factor_seq = []
+        waypoints_seq = []
         route_seq = []
         brake_seq = []
         angle_index_seq = []
@@ -470,7 +463,7 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
         #       also needs to get correct measurement_i
         start = sample_start + (self.config.seq_len - 1) * self.config.seq_step
         end = start + 1
-        for seq_i in range(start, end, self.config.seq_step):
+        for offset, seq_i in enumerate(range(start, end, self.config.seq_step)):
             measurement_i = loaded_measurements[-1]
 
             # == Load semantics ==
@@ -525,6 +518,15 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
                 box_targets_seq.append(target_result)
                 avg_factor_seq.append(avg_factor)
 
+            # == Load waypoints
+            if self.config.use_wp_gru:
+                waypoints = self.get_waypoints(
+                    loaded_measurements[offset:offset+self.config.pred_len-1],
+                    y_augmentation=aug_translation,
+                    yaw_augmentation=aug_rotation
+                )
+                waypoints_seq.append(waypoints)
+
             # == Load route ==
             route = measurement_i["route"]
             if len(route) < self.config.num_route_points:
@@ -577,7 +579,6 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
             target_data["bev_semantic"] = np.array(bev_semantics_seq)
         if self.config.use_depth:
             target_data["depth"] = np.array(depth_seq)
-
         if self.config.detect_boxes:
             target_data["bounding_boxes"] = np.array(boxes_seq)
             if self.config.use_plant:
@@ -593,7 +594,8 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
             target_data["brake_target"] = np.array([t["brake_target"] for t in box_targets_seq])
             target_data["pixel_weight"] = np.array([t["pixel_weight"] for t in box_targets_seq])
             target_data["avg_factor"] = np.array(avg_factor_seq)
-
+        if self.config.use_wp_gru:
+            target_data['ego_waypoints'] = np.array(waypoints_seq)
         target_data["route"] = np.array(route_seq)
         target_data["brake"] = np.array(brake_seq)
         target_data["angle_index"] = np.array(angle_index_seq)
