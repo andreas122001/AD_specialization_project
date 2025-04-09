@@ -510,7 +510,7 @@ class GlobalConfig:
         # When to reduce the learning rate for the first and second  time
         self.schedule_reduce_epoch_01 = 30
         self.schedule_reduce_epoch_02 = 40
-        self.val_every = 5  # Validation frequency in epochs
+        self.val_every = 10  # Validation frequency in epochs
         self.sync_batch_norm = 0  # Whether batch norm was synchronized between GPUs
         # Whether zero_redundancy_optimizer was used during training
         self.zero_redundancy_optimizer = 1

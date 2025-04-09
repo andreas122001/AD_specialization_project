@@ -170,12 +170,6 @@ def main():
         "temporarily stored on faster SSD storage on the compute node.",
     )
     parser.add_argument(
-        "--lidar_seq_len",
-        type=int,
-        default=config.lidar_seq_len,
-        help="How many temporal frames in the LiDAR to use. 1 equals single timestep.",
-    )
-    parser.add_argument(
         "--realign_lidar",
         type=int,
         default=int(config.realign_lidar),
@@ -537,12 +531,36 @@ def main():
         "--seq_len",
         type=int,
         default=config.seq_len,
-        help="sequence length of data for recurrent training",
+        help="sequence length of data for sequential training",
+    )
+    parser.add_argument(
+        "--seq_step",
+        type=int,
+        default=config.seq_step,
+        help="step between each frame",
+    )
+    parser.add_argument(
+        "--lidar_seq_len",
+        type=int,
+        default=config.lidar_seq_len,
+        help="How many temporal frames in the LiDAR to use. 1 equals single timestep.",
+    )
+    parser.add_argument(
+        "--lidar_step_size",
+        type=int,
+        default=config.lidar_step_size,
+        help="step between each temporal lidar frame",
     )
     parser.add_argument("--validation", action="store_true", help="use validation set")
     parser.add_argument(
+        "--use_temporal_fusion",
+        type=int,
+        default=config.use_temporal_fusion,
+        help="use temporal fusion module",
+    ) 
+    parser.add_argument(
         "--use_recurrent_training",
-        type=bool,
+        type=int,
         default=config.use_recurrent_training,
         help="use recurrent training (train like an RNN, high compute)",
     )    
@@ -740,6 +758,8 @@ def main():
         print(f"config.crop_image: {config.crop_image}", flush=True)
         print(f"config.cropped_height: {config.cropped_height}", flush=True)
         print(f"config.cropped_width: {config.cropped_width}", flush=True)
+        print(f"config.seq_len: {config.seq_len}", flush=True)
+        print(f"config.seq_step: {config.seq_step}", flush=True)
         print(f"config.use_trajectory_prediction: {config.use_trajectory_prediction}", flush=True)
         print(f"config.trajectory_pred_len: {config.trajectory_pred_len}", flush=True)
         print(f"config.trajectory_step_size: {config.trajectory_step_size}", flush=True)
@@ -1002,22 +1022,6 @@ class Engine(object):
         self.detailed_loss_weights = config.detailed_loss_weights
 
     def load_data_compute_loss(self, data, validation=False):
-
-        if self.config.use_temporal_fusion and self.config.seq_len > 1:
-            # Select the last seq item
-            data = {
-                k: (
-                    v[:, -1]
-                    if k not in [
-                        "rgb", "lidar", "target_point", 
-                        "speed", "command", "trajectories", 
-                        "trajectories_mask"
-                    ]
-                    else v
-                )
-                for k, v in data.items()
-            }
-
         # Validation = True will compute additional metrics not used for optimization
         # Load data used in both methods
         future_bounding_box_label = None

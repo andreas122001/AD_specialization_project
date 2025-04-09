@@ -19,7 +19,10 @@ torchrun --nnodes=1 --nproc_per_node=1 --max_restarts=0 --rdzv_id=$SLURM_JOB_ID 
     --batch_size 8 \
     --use_recurrent_training 1 \
     --use_trajectory_prediction 1 \
-    --seq_len 2 \
+    --seq_len 1 \
+    --seq_step 1 \
+    --lidar_seq_len 2 \
+    --lidar_step_size 1 \
     --lr 3e-4 \
     --setting 13_withheld \
     --root_dir $PROJECT_ROOT/results/data/$DATASET/data \
@@ -31,4 +34,4 @@ torchrun --nnodes=1 --nproc_per_node=1 --max_restarts=0 --rdzv_id=$SLURM_JOB_ID 
     --use_cosine_schedule 1 \
     --cosine_t0 1 \
     --image_architecture regnety_032 \
-    --lidar_architecture regnety_032
+    --lidar_architecture video_swin_tiny
