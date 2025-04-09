@@ -126,15 +126,7 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
                     os.listdir(lidar_dir)
                 )  # How many frames recorded for the current route
 
-                # If we are using checkpoints to predict the path, we can use all of the frames, otherwise we need to subtract
-                # pred_len so that we have enough waypoint labels
-                # last_frame = (
-                #     num_seq
-                #     - (self.config.seq_len - 1) * self.config.seq_step
-                #     - (0 if not self.config.use_wp_gru else self.config.pred_len)
-                # )
-
-                # Subtract maximum of the forcasting times
+                # Subtract the maximum of all the different forcasting times
                 last_frame = num_seq - max(
                     0, 
                     (self.config.seq_len - 1) * self.config.seq_step, 
@@ -145,8 +137,9 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
                     (0 if not self.config.use_wp_gru else self.config.pred_len),
                 )
 
+                # Skip routes that are too short for a full seq
                 if last_frame <= first_frame:
-                    warnings.warn(f"Not enough frames in {route_dir} for given sequence length (rgb: {config.img_seq_len}, lidar: {config.lidar_seq_len}, all: {config.seq_len}) and step size (rgb: {config.img_step_size}, lidar: {config.lidar_step_size}, all: {config.seq_step}), skipping route.")
+                    warnings.warn(f"Route was skipped due to not having enough frames for one full sequence (last_frame[{last_frame}]<=first_frame[{first_Frame}]).")
                     skipped_routes += 1
                     continue
 
@@ -229,13 +222,6 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
                             + "/boxes"
                             + (f"/{(seq + idx + forcast_step):04}.json.gz")
                         )
-                        # measurement.append(
-                        #     route_dir +
-                        #     "/measurements"
-                        #     + f"/{(seq + idx + forcast_step):04}.json.gz"
-                        # )
-
-
 
                     if estimate_class_distributions:
                         measurements_i = self._load_json_gz(
