@@ -132,7 +132,7 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
                     (self.config.seq_len - 1) * self.config.seq_step, 
                     (
                         0 if not self.config.use_trajectory_prediction else 
-                        1 + (self.config.trajectory_pred_len) * self.config.trajectory_step_size
+                        0 + (self.config.trajectory_pred_len) * self.config.trajectory_step_size
                     ),
                     (0 if not self.config.use_wp_gru else self.config.pred_len),
                 )
@@ -426,7 +426,7 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
             # Load future trajectory data
             for i in range(self.config.trajectory_pred_len):
                 trajectory_file = str(trajectories_root, encoding="utf-8") + (
-                    f"/{((sample_start+self.config.seq_len-1) + (i)*self.config.trajectory_step_size):04}.json.gz"
+                    f"/{((sample_start) + (i+1)*self.config.trajectory_step_size):04}.json.gz"
                 )
                 temporal_boxes_i = self._load_json_gz(trajectory_file)
                 loaded_trajectories.append(temporal_boxes_i)

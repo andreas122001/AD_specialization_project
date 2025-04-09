@@ -713,6 +713,7 @@ class GlobalConfig:
 
         # Temporal fusion
         self.use_temporal_fusion = True  # Enables streaming-based temporal fusion in the model
+        self.use_temporal_targets = False  # TODO: implement If true, loads both inputs and targets as sequences
         self.use_recurrent_training = True  # If false, disables backpropagation through temporal features, avoids model unwrapping during training (NOTE: not implemented, always True)
         self.backprop_every_step = False  # TODO implement, should do backprop on every timestep, might not be sensible though
         self.return_temporal_attn_weights = False  # Whether to return the attention weights of the temporal fusion module, for attn. vis.
