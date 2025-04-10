@@ -1,10 +1,10 @@
 #!/bin/bash
 #SBATCH --account=share-ie-idi
-#SBATCH --job-name=tfpp_stage1_l5_s5
+#SBATCH --job-name=tfpp_trajectory
 #SBATCH --ntasks=1
 #SBATCH --nodes=1
-#SBATCH --time=8-00:00:00
-#SBATCH --gres=gpu:4
+#SBATCH --time=4-00:00:00
+#SBATCH --gres=gpu:2
 #SBATCH --mem=64gb
 #SBATCH --cpus-per-task=32
 #SBATCH -o /cluster/work/andrebw/repos/temporal_garage/results/logs/%x/tfpp_010_0_%a_%A.out  # File to which STDOUT will be written
@@ -19,7 +19,7 @@
 scontrol show job $SLURM_JOB_ID
 
 echo SLURM_JOB_GPUS: $SLURM_JOB_GPUS
-export NGPUS=$(echo $SLURM_JOB_GPUS | grep -o [0-9]* | wc -l)
+export NGPUS=$(echo $SLURM_JOB_GPUS | grep -oP [0-9]+ | wc -l)
 echo NGPUS: $NGPUS
 echo Batch size: $((32 / $NGPUS))
 
@@ -39,11 +39,17 @@ torchrun --nnodes=1 --nproc_per_node=$NGPUS --max_restarts=0 --rdzv_id=$SLURM_JO
     --epochs 31 \
     --batch_size $((32 / $NGPUS)) \
     --use_temporal_fusion 1 \
-    --seq_len 5 \
-    --seq_step 5 \
+    --seq_len 2 \
+    --seq_step 1 \
     --lidar_seq_len 1 \
     --lidar_step_size 1 \
-    --use_controller_input_prediction 1 \
+    --use_trajectory_prediction 1 \
+    --trajectory_pred_len 10 \
+    --use_semantic 0 \
+    --use_bev_semantic 0 \
+    --use_depth 0 \
+    --detect_boxes 0 \
+    --use_controller_input_prediction 0 \
     --use_wp_gru 0 \
     --continue_epoch 0 \
     --lr 3e-4 \
