@@ -60,9 +60,11 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
         shared_dict: Optional[dict] = None,
         rank: int = 0,
         validation: bool = False,
+        heuristic_pruning: bool = False,
     ) -> None:
         
         self.data_root = "/".join(root[0].split("/")[:-1])
+        self.heuristic_pruning = heuristic_pruning
 
         self.config = config
         self.validation = validation
@@ -154,7 +156,7 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
                         continue
 
                     # Prune this sequence if it is deemed uninteresting
-                    if self.config.use_dataset_pruning:
+                    if self.heuristic_pruning:
                         measurements = []
                         end = seq + self.config.seq_len * self.config.seq_step
                         for seq_i in range(seq, end, self.config.seq_step):

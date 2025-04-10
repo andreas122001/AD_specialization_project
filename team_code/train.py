@@ -738,6 +738,7 @@ def main():
         shared_dict=shared_dict,
         rank=rank,
         validation=False,
+        heuristic_pruning=config.use_dataset_pruning
     )
 
     if args.setting != "all" and args.validation:
