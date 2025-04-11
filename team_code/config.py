@@ -718,6 +718,7 @@ class GlobalConfig:
         self.backprop_every_step = False  # TODO implement, should do backprop on every timestep, might not be sensible though
         self.return_temporal_attn_weights = False  # Whether to return the attention weights of the temporal fusion module, for attn. vis.
         self.temporal_fusion_heads = 4  # per-head dim would be 64 -> 256/4
+        self.temporal_fusion_layers = 1  # how many fusion layers to use 
         self.temporal_hidden_dim = 512
         self.use_learnable_historic_initialization = True  # Whether to learn initial historic tokens, else use zeros
 

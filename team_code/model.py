@@ -397,6 +397,7 @@ class LidarCenterNet(nn.Module):
 
         if self.config.use_temporal_fusion and self.config.seq_len > 1:
             self.temporal_fusor = MHATemporalFusion(
+                n_layers=self.config.temporal_fusion_layers,
                 embedded_dim=256, 
                 hidden_dim=self.config.temporal_hidden_dim,
                 n_heads=self.config.temporal_fusion_heads, 
@@ -501,7 +502,7 @@ class LidarCenterNet(nn.Module):
         attention_weights = None  # decoder attention weights
         pred_wp_1 = None
         selected_path = None
-        temporal_attn_weights = (None, None)  # (cross_attn, self_attn)
+        temporal_attn_weights: list[tuple[torch.Tensor, torch.Tensor]] = []  # [(cross_attn, self_attn)]
         features = None
 
         ### Transformer Decoder (enabled by default) ###
@@ -548,8 +549,6 @@ class LidarCenterNet(nn.Module):
                         fused_features, historic_features
                     )
                     features = fused_features.clone()
-                    if not self.config.use_recurrent_training:  # If not recurrent, detach tensor from backprop
-                        features = features.detach()
 
                 if self.config.use_wp_gru:  # Default: False
                     # Using multiple waypoints (not enabled by default)
@@ -692,10 +691,10 @@ class LidarCenterNet(nn.Module):
         pred_trajectories = None
         pred_trajectory_confidence = None
         if self.config.use_trajectory_prediction:
-            (pred_trajectories, 
-            pred_trajectory_confidence) = self.trajectory_head(fused_features)
+            masked_features = fused_features[:, :64, :]  # mask out potential extra tokens
+            (pred_trajectories,   
+            pred_trajectory_confidence) = self.trajectory_head(masked_features)
 
-        # TODO: can we make this into a dict instead? Then we can jsut unpack "preds_dict" into compute_loss
         return (
             pred_wp,
             pred_target_speed,
