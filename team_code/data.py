@@ -9,6 +9,7 @@ import ujson
 import numpy as np
 from torch.utils.data import Dataset
 from tqdm import tqdm
+from functools import lru_cache
 import sys
 import cv2
 import gzip
@@ -25,6 +26,11 @@ import tarfile
 import re
 from config import GlobalConfig
 from enum import Enum
+
+
+# Dealing with sequences, some frames are use again quickly
+# Also loading measurement during indexing, prevents loading the same file n-times
+LRU_CACHE_SIZE = 20
 
 
 class SensorFolder(Enum):
@@ -181,7 +187,7 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
                     self.sample_start.append(seq)
 
                     if estimate_sem_distribution:
-                        semantics_file = route_dir + "/" + SensorFolder.SEMANTICS.value
+                        semantics_file = route_dir + "/" + SensorFolder.SEMANTICS.value + f"/{seq:04}.png"
                         semantics_i = self.converter[
                             self._load_png(semantics_file, crop=False)
                         ]  # pylint: disable=locally-disabled, unsubscriptable-object
@@ -872,38 +878,27 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
         return not (condition1 or condition2 or condition3 or condition4 or condition5)
 
     def _pruning_heuristic(self, measurements: list[dict]):
+        speed_threshold = 0.1
+        angle_threshold = 0.5 * (np.pi / 180)
 
-        speed_threshold = 0.1 #/ self.config.seq_len  # test later
-        angle_threshold = 0.5 * (np.pi / 180)  #/ self.config.seq_len  # test later
+        speeds = np.array([m['target_speed'] for m in measurements])
+        route_points = np.array([
+            [p for p in m['route'][:self.config.predict_checkpoint_len]]
+            for m in measurements
+        ])  # Shape: (seq_len, checkpoints, 2)
 
-        # Are you going to tell me that this is not readable???
-        # A route has shape (20, 2), truncate each to (predict_checkpoint_len, 2)
-        condition1 = np.any(  # any
-            np.abs(  # absolute value of
-                np.diff(  # difference between
-                    np.arctan2(  # arctans of
-                        (routes := np.array([  # points y and x of
-                            [  # all routes (up to pred len)
-                                p for p in m['route'][: self.config.predict_checkpoint_len]
-                            ] for m in measurements
-                        ]))[:, :, 1],
-                        routes[:, :, 0]),
-                    axis=0
-                )
-            ) > angle_threshold  # is above threshold
-        )
+        # Check angle changes
+        y = route_points[:, :, 1]
+        x = route_points[:, :, 0]
+        route_angles = np.arctan2(y, x)  # angle of point (relative to ego orientation) (seq_len, checkpoints)
+        angle_diffs = np.abs(np.diff(route_angles, axis=0))  # (seq_len-1, checkpoints)
+        condition1 = np.any(angle_diffs > angle_threshold)
 
-        condition2 = np.any(np.abs(
-            np.diff([m['target_speed'] for m in measurements])
-        ) > speed_threshold)
+        # Check speed changes
+        speed_diffs = np.abs(np.diff(speeds))
+        condition2 = np.any(speed_diffs > speed_threshold)
 
-        conditions = [
-            condition1,
-            condition2,
-            random.random() <= 0.14,  # Randomly retain 14% of the sequences
-        ]
-
-        return any(conditions)
+        return condition1 or condition2 or (random.random() <= 0.14)
 
     def get_targets(self, gt_bboxes, feat_h, feat_w):
         """
@@ -1574,6 +1569,7 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
                 self.data_cache.set(key=path, value=item_i)
         return item_i
 
+    @lru_cache(maxsize=LRU_CACHE_SIZE)
     def _load_lidar(self, path: Union[str, os.PathLike]) -> np.ndarray:
         "Loads lidar data"
         def _load(path):
@@ -1583,6 +1579,7 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
 
         return self._load_cached(path, _load)
 
+    @lru_cache(maxsize=LRU_CACHE_SIZE)
     def _load_jpg(self, path: Union[str, os.PathLike]) -> np.ndarray:
         "Used for loading images"
         def _load(path):
@@ -1593,6 +1590,7 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
 
         return self._load_cached(path, _load)
 
+    @lru_cache(maxsize=LRU_CACHE_SIZE)
     def _load_png(self, path: Union[str, os.PathLike], crop: bool = True) -> np.ndarray:
         "Used for loading semantics, bev_semantics and depth"
         def _load(path):
@@ -1603,6 +1601,7 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
 
         return self._load_cached(path, _load)
 
+    @lru_cache(maxsize=LRU_CACHE_SIZE)
     def _load_json_gz(self, path: Union[str, os.PathLike]) -> np.ndarray:
         def _load(path):
             with gzip.open(path, "rt", encoding="utf-8") as f:
@@ -1654,7 +1653,7 @@ if __name__ == "__main__":
     config.augment_percentage = 1
     config.color_aug_prob = 1
     # Recurrent dataset
-    config.seq_len = 2
+    config.seq_len = 1
     config.seq_step = 1
     # Trajectories
     config.trajectory_step_size = 1
@@ -1665,6 +1664,8 @@ if __name__ == "__main__":
     config.lidar_seq_len = 1
     config.img_step_size = 1
     config.lidar_step_size = 1
+    config.estimate_class_distributions = False
+    config.estimate_semantic_distribution = False
     config.initialize(
         root_dir=[
             "../results/data/garage_v2_2025_03_15/data"
@@ -1677,6 +1678,8 @@ if __name__ == "__main__":
         estimate_sem_distribution=config.estimate_semantic_distribution,
         heuristic_pruning=use_heuristic
     )
+    # for data in tqdm(dataset):
+    #     ...
     # sample = dataset.__getitem__(90)
     # print("\nShapes:")
     # for k, v in sample.items():
