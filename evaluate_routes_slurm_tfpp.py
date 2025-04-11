@@ -292,17 +292,20 @@ def main():
         for idx, exp_name in enumerate(exp_names):
             for route_path in route_files:
 
+                scenario = route_path.split("/")[-2]
                 route = Path(route_path).stem
 
                 bash_save_dir = Path(
                     f"evaluation/{experiment_name_root}/{exp_name}/run_bashs"
                 )
                 results_save_dir = Path(
-                    f"evaluation/{experiment_name_root}/{exp_name}/results"
+                    f"evaluation/{experiment_name_root}/{exp_name}/results/{scenario}"
                 )
+                os.makedirs(results_save_dir, exist_ok=True)
                 logs_save_dir = Path(
-                    f"evaluation/{experiment_name_root}/{exp_name}/logs"
+                    f"evaluation/{experiment_name_root}/{exp_name}/{scenario}/logs"
                 )
+                os.makedirs(logs_save_dir, exist_ok=True)
 
                 commands = []
 

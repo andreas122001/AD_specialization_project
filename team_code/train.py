@@ -895,7 +895,7 @@ def main():
 
     # We only need one process to log the losses
     if rank == 0:
-        writer = SummaryWriter(log_dir=args.logdir)
+        writer = SummaryWriter(log_dir=os.path.join(args.logdir, "tensorboard"))
         # Log args
         with open(os.path.join(args.logdir, "args.txt"), "w", encoding="utf-8") as f:
             json.dump(args.__dict__, f, indent=2)
@@ -973,6 +973,8 @@ def main():
             trainer.save()
 
         trainer.cur_epoch += 1
+
+    print("Training completed!")
 
 
 class Engine(object):

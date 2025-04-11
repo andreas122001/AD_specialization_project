@@ -49,13 +49,13 @@ torchrun --nnodes=1 --nproc_per_node=$NGPUS --max_restarts=0 --rdzv_id=$SLURM_JO
     --use_bev_semantic 0 \
     --use_depth 0 \
     --detect_boxes 0 \
-    --use_controller_input_prediction 0 \
+    --use_controller_input_prediction 1 \
     --use_wp_gru 0 \
     --continue_epoch 0 \
     --lr 3e-4 \
     --setting 13_withheld \
     --root_dir $PROJECT_ROOT/results/data/$DATASET/data \
-    --logdir $PROJECT_ROOT/results \
+    --logdir $PROJECT_ROOT/results/training \
     --cpu_cores $OMP_NUM_THREADS \
     --num_repetitions 1 \
     --use_cosine_schedule 1 \

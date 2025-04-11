@@ -17,21 +17,27 @@ torchrun --nnodes=1 --nproc_per_node=1 --max_restarts=0 --rdzv_id=$SLURM_JOB_ID 
     --seed 0 \
     --epochs 31 \
     --batch_size 8 \
+    --seq_len 2 \
+    --seq_step 1 \
     --use_recurrent_training 1 \
     --use_trajectory_prediction 1 \
-    --seq_len 1 \
-    --seq_step 1 \
-    --lidar_seq_len 2 \
+    --trajectory_pred_len 10 \
+    --use_semantic 0 \
+    --use_bev_semantic 0 \
+    --use_depth 0 \
+    --detect_boxes 1 \
+    --use_controller_input_prediction 1 \
+    --use_wp_gru 0 \
+    --lidar_seq_len 1 \
     --lidar_step_size 1 \
+    --continue_epoch 0 \
     --lr 3e-4 \
     --setting 13_withheld \
     --root_dir $PROJECT_ROOT/results/data/$DATASET/data \
-    --logdir $PROJECT_ROOT/results \
-    --use_controller_input_prediction 1 \
-    --continue_epoch 0 \
+    --logdir $PROJECT_ROOT/results/training \
     --cpu_cores $OMP_NUM_THREADS \
     --num_repetitions 1 \
     --use_cosine_schedule 1 \
     --cosine_t0 1 \
     --image_architecture regnety_032 \
-    --lidar_architecture video_swin_tiny
+    --lidar_architecture regnety_032
