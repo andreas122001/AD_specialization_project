@@ -62,7 +62,7 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
         validation: bool = False,
         heuristic_pruning: bool = False,
     ) -> None:
-        
+
         self.data_root = "/".join(root[0].split("/")[:-1])
         self.heuristic_pruning = heuristic_pruning
 
@@ -85,6 +85,8 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
             config.lidar_aug_prob, cutout=config.use_cutout
         )
 
+        self.forcast_step = int(config.forcast_time / (config.data_save_freq / config.carla_fps) + 0.5)
+
         # Initialize with 1 example per class
         self.angle_distribution = np.arange(len(config.angles)).tolist()
         self.speed_distribution = np.arange(len(config.target_speeds)).tolist()
@@ -92,6 +94,7 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
         total_routes = 0
         trainable_routes = 0
         skipped_routes = 0
+        pruned_samples = 0
 
         # loops over the scenarios given in root (which is a list of the scenario folders)
         for sub_root in tqdm(root, file=sys.stdout, disable=rank != 0):
@@ -137,8 +140,8 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
 
                 # Subtract the maximum of all the different forcasting times
                 last_frame = num_seq - max(
-                    0, 
-                    (self.config.seq_len - 1) * self.config.seq_step, 
+                    0,
+                    (self.config.seq_len - 1) * self.config.seq_step,
                     (self.config.trajectory_pred_len * self.config.trajectory_step_size) if self.config.use_trajectory_prediction else 0,
                     (self.config.pred_len * self.config.wp_dilation) if self.config.use_wp_gru else 0,
                 )
@@ -158,15 +161,17 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
                     # Prune this sequence if it is deemed uninteresting
                     if self.heuristic_pruning:
                         measurements = []
+                        start = seq if self.config.seq_len > 1 else seq-1
                         end = seq + self.config.seq_len * self.config.seq_step
-                        for seq_i in range(seq, end, self.config.seq_step):
+                        for seq_i in range(start, end, self.config.seq_step):
                             measurement_file = route_dir + "/" + SensorFolder.MEASUREMENTS.value
                             measurements_i = self._load_json_gz(
-                                measurement_file + f"/{(seq_i):04}.json.gz"
+                                measurement_file + f"/{seq_i :04}.json.gz"
                             )
                             measurements.append(measurements_i)
 
                         if not self._pruning_heuristic(measurements):
+                            pruned_samples += 1
                             continue
 
                     # Store only the scenario + route + sample_start of the current index
@@ -188,7 +193,7 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
                         measurement = route_dir + "/" + SensorFolder.MEASUREMENTS.value
 
                         measurements_i = self._load_json_gz(
-                            measurement + f"/{(seq):04}.json.gz"
+                            measurement + f"/{seq :04}.json.gz"
                         )
 
                         target_speed_index, angle_index = self.get_indices_speed_angle(
@@ -254,10 +259,13 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
         self.route_root = np.array(self.route_root).astype(np.string_)
         self.sample_start = np.array(self.sample_start)
         if rank == 0:
-            print(f"Loading {len(self.route_root)} lidars from {len(root)} folders")
+            print(f"Loading {len(self.route_root)} samples from {len(root)} scenarios")
             print("Total amount of routes:", total_routes)
             print("Skipped routes:", skipped_routes)
             print("Trainable routes:", trainable_routes)
+            print(f"Maximum dataset size: {len(self.route_root) + pruned_samples}")
+            print(f"Pruned {pruned_samples} samples ("
+                  f"{pruned_samples / (len(self.route_root) + pruned_samples):.1%} of dataset)")
 
     def __len__(self):
         """Returns the length of the dataset."""
@@ -317,7 +325,7 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
 
         # For lidar alignment, we need the current frame
         current_measurement = loaded_measurements[self.config.seq_len - 1]  # the present/current measurement
-    
+
         # If using GRU WP prediction, append further future measurements
         if self.config.use_wp_gru:
             # Start: end of sequence
@@ -334,7 +342,7 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
         # To avoid complications, temporal rgb and temporal lidar are loaded in a separate loop
         # Temporal rgb and temporal lidar should not be used with seq_len > 1
         #   (it makes no sense to have a sequence of sequences of images or lidars...)
-        
+
         # Model inputs
         image_seq = []
         lidar_seq = []
@@ -352,7 +360,7 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
         semantics_path = semantics_root
         bev_semantics_path = bev_semantics_root
         depth_path = depth_root
-        
+
         # === Load model inputs ===
         # (rgb, lidar, ego_velocity, commmand and target_point)
         start = sample_start
@@ -383,7 +391,7 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
             # That only makes sense if model gets the whole sequence at once (e.g. via video encoder)
             lidar = self.align(
                 lidar,
-                measurements_i,  
+                measurements_i,
                 measurements_i,
                 y_augmentation=aug_translation,
                 yaw_augmentation=aug_rotation,
@@ -403,7 +411,7 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
             command_seq.append(command)
             next_command = t_u.command_to_one_hot(measurement_i["next_command"])
             next_command_seq.append(next_command)
-            
+
             target_point = self.augment_target_point(
                 np.array(measurement_i["target_point"]),
                 y_augmentation=aug_translation,
@@ -491,14 +499,14 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
             # == Load boxes ==
             if self.config.detect_boxes:
                 boxes_i = future_boxes_i = None
-                
+
                 box_file = boxes_root + f"/{seq_i:04}.json.gz"
                 boxes_i = self._load_json_gz(box_file)
 
                 boxes_raw_seq.append(boxes_i)
 
                 if self.config.use_plant:
-                    future_box_file = boxes_root + f"/{seq_i + forcast_step:04}.json.gz"
+                    future_box_file = boxes_root + f"/{seq_i + self.forcast_step:04}.json.gz"
                     future_boxes_i = self._load_json_gz(future_box_file)
 
                 # Process and pad the boxes
@@ -544,7 +552,7 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
             )
             if self.config.smooth_route:
                 route = self.smooth_path(route)
-            route_seq.append(route) 
+            route_seq.append(route)
 
             # == Load brake, target speed and angle index ==
             brake = measurement_i["brake"]
@@ -614,7 +622,7 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
         # If not using sequences for targets, remove the seq dimension
         if target_data["brake"].shape[0] == 1:  # e.g., brake
             target_data = {k: v.squeeze(0) for k, v in target_data.items()}
-        
+
         # Add targets to data
         data.update(target_data)
 
@@ -740,7 +748,7 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
 
     def _process_trajectories(self, temporal_boxes, current_boxes, y_augmentation=0.0, yaw_augmentation=0.0):
         # TODO: make sure the current boxes are augmented correctly
-        
+
         # N: max number of boxes
         # n: number of actual boxes
         # F: future timesteps
@@ -751,7 +759,7 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
         # Remove boxes outside bounds after aug
         # These *should* now correspond to the BB targets from self._process_boxes(...)
         _, _, valid_boxes = self.parse_bounding_boxes(
-            current_boxes, None, 
+            current_boxes, None,
             y_augmentation=y_augmentation, yaw_augmentation=yaw_augmentation, return_original=True
         )
         valid_ids = list(set([b['id'] for b in valid_boxes]))
@@ -864,17 +872,38 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
         return not (condition1 or condition2 or condition3 or condition4 or condition5)
 
     def _pruning_heuristic(self, measurements: list[dict]):
-        # Randomy retain 14% of the sequences
-        if random.random() <= 0.14:
-            return True
 
-        speed_threshold = 0.1
-        angle_threshold = 0.5 * (3.14/ 180)
-        speeds = [m['speed'] for m in measurements]
-        angles = [m['steer'] for m in measurements]
+        speed_threshold = 0.1 #/ self.config.seq_len  # test later
+        angle_threshold = 0.5 * (np.pi / 180)  #/ self.config.seq_len  # test later
 
-        return abs(max(speeds) - min(speeds)) > speed_threshold \
-            or abs(max(angles) - min(angles)) > angle_threshold
+        # Are you going to tell me that this is not readable???
+        # A route has shape (20, 2), truncate each to (predict_checkpoint_len, 2)
+        condition1 = np.any(  # any
+            np.abs(  # absolute value of
+                np.diff(  # difference between
+                    np.arctan2(  # arctans of
+                        (routes := np.array([  # points y and x of
+                            [  # all routes (up to pred len)
+                                p for p in m['route'][: self.config.predict_checkpoint_len]
+                            ] for m in measurements
+                        ]))[:, :, 1],
+                        routes[:, :, 0]),
+                    axis=0
+                )
+            ) > angle_threshold  # is above threshold
+        )
+
+        condition2 = np.any(np.abs(
+            np.diff([m['target_speed'] for m in measurements])
+        ) > speed_threshold)
+
+        conditions = [
+            condition1,
+            condition2,
+            random.random() <= 0.14,  # Randomly retain 14% of the sequences
+        ]
+
+        return any(conditions)
 
     def get_targets(self, gt_bboxes, feat_h, feat_w):
         """
@@ -1312,7 +1341,7 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
         return bboxes, future_bboxes
 
     def parse_bounding_boxes_traj(self, future_boxes, reference, y_augmentation=0.0, yaw_augmentation=0):
-        
+
         # We need to find the ego matrix and yaw
         ego_matrix = None
         ego_yaw = None
@@ -1330,7 +1359,7 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
             # Only detect movable objects
             condition1 = sample_box["class"] in ["car", "walker"]
             # Only detect boxes with enough lidar hits
-            condition2 = ("num_points" not in sample_box 
+            condition2 = ("num_points" not in sample_box
                     or not (
                         # Walker under walker threshold
                         (sample_box["class"] == "walker"
@@ -1344,7 +1373,7 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
             )
             if not (condition1 and condition2):
                 continue  # Ignore box
-            
+
             # (2) Find the relative position (P_{E_t} -> P_{E_0})
             # (P_{E_t} is relative to ego at t, P_{E_0} is relative to ego at 0)
             sample_matrix = np.array(sample_box["matrix"])
@@ -1355,7 +1384,7 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
             relative_yaw = t_u.normalize_angle(sample_yaw - ego_yaw)
             sample_box["position"] = [*relative_pos[:3]]
             sample_box["yaw"] = relative_yaw
-            
+
             # (3) Convert to label array
             # All future positions should be relative to t=0 aug
             bbox, height = self.get_bbox_label(
@@ -1532,7 +1561,7 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
 
         interpolated_route_points = np.array(interpolated_route_points)
         return interpolated_route_points
-    
+
     def _load_cached(self, path: Union[str, os.PathLike], load_func):
         item_i = None
         # load from cache, if enabled and found
@@ -1551,7 +1580,7 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
             las_object = laspy.read(path)
             lidars_i = las_object.xyz
             return lidars_i
-        
+
         return self._load_cached(path, _load)
 
     def _load_jpg(self, path: Union[str, os.PathLike]) -> np.ndarray:
@@ -1561,7 +1590,7 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
             image_i = cv2.cvtColor(image_i, cv2.COLOR_BGR2RGB)
             image_i = t_u.crop_array(self.config, image_i)
             return image_i
-        
+
         return self._load_cached(path, _load)
 
     def _load_png(self, path: Union[str, os.PathLike], crop: bool = True) -> np.ndarray:
@@ -1620,14 +1649,25 @@ def lidar_augmenter(prob=0.2, cutout=False):
 if __name__ == "__main__":
     from config import GlobalConfig
 
+    use_heuristic = True
     config = GlobalConfig()
-    config.seq_len = 1
-    config.lidar_seq_len = 1
-    config.img_seq_len = 1
+    config.augment_percentage = 1
+    config.color_aug_prob = 1
+    # Recurrent dataset
+    config.seq_len = 2
+    config.seq_step = 1
+    # Trajectories
+    config.trajectory_step_size = 1
     config.use_trajectory_prediction = True
+    config.trajectory_pred_len = 8
+    # Img + lidar seq
+    config.img_seq_len = 1
+    config.lidar_seq_len = 1
+    config.img_step_size = 1
+    config.lidar_step_size = 1
     config.initialize(
         root_dir=[
-            "/cluster/work/andrebw/repos/temporal_garage/results/data/garage_v2_2025_03_15/data"
+            "../results/data/garage_v2_2025_03_15/data"
         ]
     )
     dataset = CARLA_Data(
@@ -1635,14 +1675,16 @@ if __name__ == "__main__":
         config=config,
         estimate_class_distributions=config.estimate_class_distributions,
         estimate_sem_distribution=config.estimate_semantic_distribution,
+        heuristic_pruning=use_heuristic
     )
-    sample = dataset.__getitem__(501)
-    print("\nShapes:")
-    for k, v in sample.items():
-        if isinstance(v, np.ndarray):
-            if v.shape == np.array(0).shape:
-                print(f"'{k}': {v} ({v.dtype})")
-            else:
-                print(f"'{k}': shape[{v.shape}]")
-    print()
-    print(sample.keys())
+    # sample = dataset.__getitem__(90)
+    # print("\nShapes:")
+    # for k, v in sample.items():
+    #     if isinstance(v, np.ndarray):
+    #         if v.shape == np.array(0).shape:
+    #             print(f"'{k}': {v} ({v.dtype})")
+    #         else:
+    #             print(f"'{k}': shape[{v.shape}]")
+    # print()
+    # print(sample.keys())
+
