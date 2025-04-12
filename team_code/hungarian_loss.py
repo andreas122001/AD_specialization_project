@@ -20,7 +20,7 @@ class HungarianLoss(torch.nn.Module):
         mask: Optional[torch.Tensor] = None,
     ) -> dict[torch.Tensor, torch.Tensor]:
         """
-        Compute the Hungarian loss for predicted 2D trajectories with batch B, number of trajectories N, for future timesteps F.
+        Compute the Hungarian loss for predicted 2D trajectories with batch B, number of objects N, for future timesteps F.
 
         Args:
             outputs: tuple containing predicted trajectories and confidence scores.
@@ -32,58 +32,71 @@ class HungarianLoss(torch.nn.Module):
                     Useful for ignoring parts of GT trajectories if some points are missing.
         """
         pred_trajectory, pred_confidence = outputs  # pred_trajectory: [B, N, F, 2]
-        batch_size, num_queries, F, _ = pred_trajectory.shape
+        batch_size, num_queries, F, _ = pred_trajectory.shape  # pred_confidence: [B, N, 2]
 
         # Compute a per-trajectory validity flag for ground truth.
-        # Here, if the sum of absolute values in a trajectory is greater than zero, it is considered valid.
-        target_valid = (targets.abs().sum(dim=(2, 3)) > 0).long()  # Shape: [B, N]
+        # Here, if the sum of absolute values in a trajectory is not zero, it is considered valid.
+        # Otherwise, it is most certainly just padding.
+        valid_indices = targets.abs().sum(dim=(2, 3)).not_equal(0).long()  # Shape: [N]
+        
+        # Mask out invalid trajectory points
+        # if some points are missing (e.g. actor is missing for some frame), we exclude them
+        # We don't want to penalize the model for bad GTs
+        if mask is not None:
+            targets = targets * mask.unsqueeze(3)
+
+        # Initialize the target confidences, which will contain the reordered valid targets (after matching)
+        target_confidences = torch.zeros(batch_size, num_queries).long()
 
         total_traj_loss = 0.0
 
         # For each batch element, compute the optimal matching.
         for b in range(batch_size):
+
             # For the current batch element: predicted trajectories [N, F, 2]
-            preds = pred_trajectory[b]  # Shape: [N, F, 2]
+            preds_traj = pred_trajectory[b]  # Shape: [N, F, 2]
             targets_b = targets[b]  # Shape: [N, F, 2]
 
-            # Mask for valid trajectory points
-            # if some points are missing (e.g. actor went outside bounds), we exclude them
-            # We don't want to penalize the model for bad GTs
-            if mask is not None:
-                preds = preds * mask[b].unsqueeze(2)
-                targets_b = targets_b * mask[b].unsqueeze(2)
-
-            # Mask for number of actors
-            valid_mask = target_valid[b].bool()  # Shape: [N]
-
-            # Extract only the valid ground truth trajectories.
+            # Mask out invalid targets, and count number of valids
+            valid_mask = valid_indices[b].bool()  # Shape: [N]
             valid_targets = targets_b[valid_mask]  # Shape: [num_valid, F, 2]
-            num_valid = valid_targets.shape[0]
+            num_valid = valid_mask.long().sum()
 
-            # If no valid targets exist, continue.
+            # If no valid targets exist, continue. 
+            # We don't need to match it since they are all zero anyway.
             if num_valid == 0:
                 continue
 
-            # Build the cost matrix [num_queries, num_valid] using the L1 loss.
+            # Build cost matrix [num_queries, num_valid] using the L1 loss.
             cost_matrix = torch.zeros(
                 (num_queries, num_valid), device=pred_trajectory.device
             )
             for i in range(num_queries):
                 for j in range(num_valid):
-                    # Compute cost for each pair.
-                    cost_matrix[i, j] = self.trajectory_loss(preds[i], valid_targets[j])
+                    # Compute cost for each pred/target-pair.
+                    cost_matrix[i, j] = self.trajectory_loss(preds_traj[i], valid_targets[j])
 
             # Hungarian algorithm is non-differentiable, so we detach
             with torch.no_grad():
-                # Convert cost matrix to numpy.
+                # Get minimum loss indices.
                 cost_np = cost_matrix.cpu().numpy()
-                row_ind, col_ind = linear_sum_assignment(cost_np)
+                row_idx, col_idx = linear_sum_assignment(cost_np)
 
-            # Use the matching indices to gather predictions and corresponding targets.
-            matched_preds = preds[row_ind]  # [num_valid, F, 2]
-            matched_targets = valid_targets[col_ind]  # [num_valid, F, 2]
+            # Use the matching indices to gather predictions and corresponding targets
+            matched_preds = preds_traj[row_idx]  # [num_valid, F, 2]
+            matched_targets = valid_targets[col_idx]  # [num_valid, F, 2]
 
-            # Compute the trajectory loss for the matched pairs.
+            # Need to mask the matched preds as well
+            # This is done per-batch as we need the correct ordering
+            if mask is not None:
+                valid_indices = torch.where(valid_mask)[0]
+                mask_index = valid_indices[col_idx]
+                matched_preds = matched_preds * mask[b][mask_index].unsqueeze(2)
+
+            # Update the target confidences
+            target_confidences[b, row_idx] = 1  # matched indices should be 1
+
+            # Calculate the trajectory loss for the matched pairs
             loss_traj = self.trajectory_loss(matched_preds, matched_targets)
             total_traj_loss += loss_traj
 
@@ -95,11 +108,35 @@ class HungarianLoss(torch.nn.Module):
         # and target_valid is of shape [B, N] with values 0 (padded) or 1 (valid).
         # Reshape to combine batch and queries.
         conf_logits = pred_confidence.view(-1, 2)  # [B*N, 2]
-        conf_targets = target_valid.view(-1)  # [B*N]
-        loss_conf = self.confidence_loss(conf_logits, conf_targets)
+        target_confidences = target_confidences.view(-1).long()  # [B*N]
+        avg_conf_loss = self.confidence_loss(conf_logits, target_confidences)
 
         losses = {
             "loss_trajectories": avg_traj_loss,
-            "loss_trajectory_confidence": loss_conf,
+            "loss_trajectory_confidence": avg_conf_loss,
         }
         return losses
+
+
+if __name__ == "__main__":
+    # Example usage
+    B, N, F = 1, 3, 4
+    pred_trajectory = torch.zeros(B, N, F, 2)
+    pred_trajectory[:,2,:] = torch.tensor([1.0, 1.0])
+    pred_trajectory[:,0,:] = torch.tensor([2.1, 1.0])
+
+    pred_confidence = torch.zeros(B, N, 2) + torch.tensor([1.0, -1.0])*10
+    pred_confidence[:,0,:] = torch.tensor([-1.0, 1.0])*10
+    pred_confidence[:,2,:] = torch.tensor([-1.0, 1.0])*10
+
+    targets = torch.zeros(B, N, F, 2)
+    targets[:,0,:] = torch.tensor([1.0, 1.0])
+    targets[:,2,:] = torch.tensor([2.0, 1.0])
+    
+    mask = torch.ones(B, N, F)
+    mask[:,0,3] = 0
+
+    criterion = HungarianLoss()
+    outputs = (pred_trajectory, pred_confidence)
+    losses = criterion(outputs, targets, mask)
+    print(losses)
