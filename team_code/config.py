@@ -713,9 +713,10 @@ class GlobalConfig:
 
         # Temporal fusion
         self.use_temporal_fusion = True  # Enables streaming-based temporal fusion in the model
-        self.use_temporal_targets = False  # TODO: implement If true, loads both inputs and targets as sequences
-        self.use_recurrent_training = True  # If false, disables backpropagation through temporal features, avoids model unwrapping during training (NOTE: not implemented, always True)
-        self.backprop_every_step = False  # TODO implement, should do backprop on every timestep, might not be sensible though
+        # If True: does full BPTT training, i.e. does backward pass through the whole sequence, up to the temporal module (incl. backbone) 
+        # If False: calculates the features under no_grad, then fuses them only with the temporal module with gradients, 
+        #   then does a full training step on the last sample of the sequence
+        self.use_recurrent_training = True   
         self.return_temporal_attn_weights = False  # Whether to return the attention weights of the temporal fusion module, for attn. vis.
         self.temporal_fusion_heads = 4  # per-head dim would be 64 -> 256/4
         self.temporal_fusion_layers = 1  # how many fusion layers to use 
@@ -730,7 +731,7 @@ class GlobalConfig:
         self.use_dataset_pruning = True  # If true, prune the dataset of unimportant samples (see data.CARLA_Data._pruning_heuristic)
 
         # This used to be default True for seq_len > 1, but can now be disabled to make it comparable to the original TransFuser++, or for using other future prediction methods
-        self.use_velocity_brake_head = False  # Whether to predict velocity and braking for bbs in CenterNet, can not be used with seq_len=1 (makes not sense then)
+        self.use_velocity_brake_head = False  # Whether to predict velocity and braking for bbs in CenterNet, does nothing for seq_len=1 (makes no sense then)
 
         # GPT Encoder
         self.block_exp = 4

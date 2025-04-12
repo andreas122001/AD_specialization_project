@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --account=share-ie-idi
-#SBATCH --job-name=tfpp_trajectory
+#SBATCH --job-name=tfpp_base
 #SBATCH --ntasks=1
 #SBATCH --nodes=1
 #SBATCH --time=4-00:00:00
@@ -39,16 +39,17 @@ torchrun --nnodes=1 --nproc_per_node=$NGPUS --max_restarts=0 --rdzv_id=$SLURM_JO
     --epochs 31 \
     --batch_size $((32 / $NGPUS)) \
     --use_temporal_fusion 1 \
+    --temporal_fusion_layers 1 \
     --seq_len 2 \
     --seq_step 1 \
     --lidar_seq_len 1 \
     --lidar_step_size 1 \
     --use_trajectory_prediction 1 \
     --trajectory_pred_len 10 \
-    --use_semantic 0 \
-    --use_bev_semantic 0 \
-    --use_depth 0 \
-    --detect_boxes 0 \
+    --use_semantic 1 \
+    --use_bev_semantic 1 \
+    --use_depth 1 \
+    --detect_boxes 1 \
     --use_controller_input_prediction 1 \
     --use_wp_gru 0 \
     --continue_epoch 0 \

@@ -559,10 +559,16 @@ def main():
         help="use temporal fusion module",
     ) 
     parser.add_argument(
+        "--temporal_fusion_layers",
+        type=int,
+        default=config.temporal_fusion_layers,
+        help="How many temporal fusion block layers to use",
+    ) 
+    parser.add_argument(
         "--use_recurrent_training",
         type=int,
         default=config.use_recurrent_training,
-        help="use recurrent training (train like an RNN, high compute)",
+        help="use recurrent training (train with full BPTT, high compute)",
     )    
     parser.add_argument(
         "--use_trajectory_prediction",
@@ -895,7 +901,7 @@ def main():
 
     # We only need one process to log the losses
     if rank == 0:
-        writer = SummaryWriter(log_dir=os.path.join(args.logdir, "tensorboard"))
+        writer = SummaryWriter(log_dir=args.logdir)
         # Log args
         with open(os.path.join(args.logdir, "args.txt"), "w", encoding="utf-8") as f:
             json.dump(args.__dict__, f, indent=2)

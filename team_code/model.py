@@ -416,28 +416,28 @@ class LidarCenterNet(nn.Module):
         if self.config.tp_attention:
             nn.init.uniform_(self.tp_pos_embed)
 
-    def forward(
+    def forward_static(
         self,
         rgb: torch.Tensor,
         lidar_bev: torch.Tensor,
         target_point: torch.Tensor,
         ego_vel: torch.Tensor,
         command: torch.Tensor,
-        target_point_next: Optional[torch.Tensor] = None,
+        target_point_next: Optional[torch.Tensor] = None,    
     ):
-        # Get batch and seq dims
-        batch_dim = lidar_bev.shape[0]
+        # Get seq dim
         seq_dim = (
             lidar_bev.shape[1]
             if len(lidar_bev.shape) == 5 and self.config.use_temporal_fusion
             else 1
         )
 
-        # If seq dim > 1, do recurrent forward
-        if self.config.use_temporal_fusion and seq_dim > 1:
-            # Loop over the seq dim
-            historic_feature = None
-            for i in range(seq_dim):
+        features = []
+        # For all but the last frame, compute features under no_grad
+        with torch.no_grad():
+            # Gather features from no-grad forward pass
+            spatial_features = None
+            for i in range(seq_dim - 1):
                 outputs = self._forward_step(
                     rgb[:, i],
                     lidar_bev[:, i],
@@ -447,9 +447,92 @@ class LidarCenterNet(nn.Module):
                     ],  # because we unsqueeze it before (not incl. seq dim)
                     command[:, i],
                     target_point_next[:, i] if target_point_next else None,
-                    historic_feature,
+                    historic_features=None,  # not using temporal fusion here
                 )
-                historic_feature = outputs[-1]
+                spatial_features = outputs[-2]
+                features.append(spatial_features)
+
+        # In backward pass
+        prev_feat = None
+        for feat in features:
+            # Process features with temporal fusion
+            prev_feat, _ = self.temporal_fusor(feat, prev_feat)
+
+        outputs = self._forward_step(
+            rgb[:, -1],
+            lidar_bev[:, -1],
+            target_point[:, -1],
+            ego_vel.transpose(-1, -2)[
+                :, -1
+            ],  # because we unsqueeze it before (not incl. seq dim)
+            command[:, -1],
+            target_point_next[:, -1] if target_point_next else None,
+            historic_features=prev_feat,
+        )
+
+        return outputs
+
+    def forward_bptt(
+        self,
+        rgb: torch.Tensor,
+        lidar_bev: torch.Tensor,
+        target_point: torch.Tensor,
+        ego_vel: torch.Tensor,
+        command: torch.Tensor,
+        target_point_next: Optional[torch.Tensor] = None, 
+    ):
+        # Get seq dim
+        seq_dim = (
+            lidar_bev.shape[1]
+            if len(lidar_bev.shape) == 5 and self.config.use_temporal_fusion
+            else 1
+        )
+
+        # Loop over the seq dim
+        historic_feature = None
+        for i in range(seq_dim):
+            outputs = self._forward_step(
+                rgb[:, i],
+                lidar_bev[:, i],
+                target_point[:, i],
+                ego_vel.transpose(-1, -2)[
+                    :, i
+                ],  # because we unsqueeze it before (not incl. seq dim)
+                command[:, i],
+                target_point_next[:, i] if target_point_next else None,
+                historic_feature,
+            )
+            historic_feature = outputs[-1]
+
+        # Return the last computed output (then BPTT)
+        return outputs
+
+    def forward(
+        self,
+        rgb: torch.Tensor,
+        lidar_bev: torch.Tensor,
+        target_point: torch.Tensor,
+        ego_vel: torch.Tensor,
+        command: torch.Tensor,
+        target_point_next: Optional[torch.Tensor] = None,
+    ):
+        # Get seq dim
+        seq_dim = (
+            lidar_bev.shape[1]
+            if len(lidar_bev.shape) == 5 and self.config.use_temporal_fusion
+            else 1
+        )
+
+        # If seq dim > 1, do recurrent forward
+        if self.config.use_temporal_fusion and seq_dim > 1:
+            if not self.config.use_recurrent_training:
+                outputs = self.forward_static(
+                    rgb, lidar_bev, target_point, ego_vel, command, target_point_next
+                )
+            else:
+                outputs = self.forward_bptt(
+                    rgb, lidar_bev, target_point, ego_vel, command, target_point_next
+                )
         else:
             outputs = self._forward_step(
                 rgb,
@@ -458,10 +541,10 @@ class LidarCenterNet(nn.Module):
                 ego_vel,
                 command,
                 target_point_next,
-                None,
+                None,  # don't use historic context
             )
 
-        return outputs[:-1]
+        return outputs[:-2]  # ignore output features
 
     # RGB: (B, C, W, H)
     # BEV: (B, W, H)
@@ -503,18 +586,19 @@ class LidarCenterNet(nn.Module):
         pred_wp_1 = None
         selected_path = None
         temporal_attn_weights: list[tuple[torch.Tensor, torch.Tensor]] = []  # [(cross_attn, self_attn)]
-        features = None
+        spatial_features = None
+        spatiotemporal_features = None
 
         ### Transformer Decoder (enabled by default) ###
         if (
             self.config.use_wp_gru or self.config.use_controller_input_prediction
         ):  # Default: True
             if self.config.transformer_decoder_join:  # Default: True
-                fused_features = self.change_channel(fused_features)
+                fused_features = self.change_channel(fused_features)  # (B, 1512, 8, 8) -> (B, 256, 8, 8)
                 fused_features = fused_features + self.encoder_pos_encoding(
                     fused_features
                 )
-                fused_features = torch.flatten(fused_features, start_dim=2)
+                fused_features = torch.flatten(fused_features, start_dim=2)  # (B, 256, 64)
                 if (
                     self.config.tp_attention
                 ):  # Default: False (for attention visualization)
@@ -535,7 +619,7 @@ class LidarCenterNet(nn.Module):
                         bs, 1
                     )
                     fused_features = torch.cat(
-                        (fused_features, extra_sensors.unsqueeze(2)), axis=2
+                        (fused_features, extra_sensors.unsqueeze(2)), axis=2  # (1, 256, 65)
                     )
                 else:
                     fused_features = torch.cat((fused_features, extra_sensors), axis=1)
@@ -545,10 +629,11 @@ class LidarCenterNet(nn.Module):
 
                 ### Temporal fusion (if enabled) ###
                 if self.config.use_temporal_fusion and self.config.seq_len > 1:
+                    spatial_features = fused_features.clone()
                     fused_features, temporal_attn_weights = self.temporal_fusor(  # expects tensors: (BZ, 65, n_dim)
                         fused_features, historic_features
                     )
-                    features = fused_features.clone()
+                    spatiotemporal_features = fused_features.clone()
 
                 if self.config.use_wp_gru:  # Default: False
                     # Using multiple waypoints (not enabled by default)
@@ -690,10 +775,10 @@ class LidarCenterNet(nn.Module):
         
         pred_trajectories = None
         pred_trajectory_confidence = None
-        if self.config.use_trajectory_prediction:
+        # Not used if not using temporal context
+        if self.config.use_trajectory_prediction and max(self.config.seq_len, self.config.lidar_seq_len, self.config.img_seq_len) > 1:
             masked_features = fused_features[:, :64, :]  # mask out potential extra tokens
-            (pred_trajectories,   
-            pred_trajectory_confidence) = self.trajectory_head(masked_features)
+            (pred_trajectories, pred_trajectory_confidence) = self.trajectory_head(masked_features)
 
         return (
             pred_wp,
@@ -709,7 +794,8 @@ class LidarCenterNet(nn.Module):
             pred_wp_1,
             selected_path,
             temporal_attn_weights,
-            features,
+            spatial_features,
+            spatiotemporal_features,
         )
 
     def compute_loss(

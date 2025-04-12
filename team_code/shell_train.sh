@@ -16,15 +16,17 @@ torchrun --nnodes=1 --nproc_per_node=1 --max_restarts=0 --rdzv_id=$SLURM_JOB_ID 
     --crop_image 1 \
     --seed 0 \
     --epochs 31 \
-    --batch_size 8 \
-    --seq_len 2 \
+    --batch_size 16 \
+    --seq_len 6 \
     --seq_step 1 \
-    --use_recurrent_training 1 \
+    --use_temporal_fusion 1 \
+    --use_recurrent_training 0 \
+    --temporal_fusion_layers 8 \
     --use_trajectory_prediction 1 \
     --trajectory_pred_len 10 \
-    --use_semantic 0 \
-    --use_bev_semantic 0 \
-    --use_depth 0 \
+    --use_semantic 1 \
+    --use_bev_semantic 1 \
+    --use_depth 1 \
     --detect_boxes 1 \
     --use_controller_input_prediction 1 \
     --use_wp_gru 0 \
