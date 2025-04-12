@@ -727,6 +727,11 @@ class GlobalConfig:
         self.trajectory_pred_len = 6
         self.trajectory_step_size = 1
         self.max_num_trajectories = 20  # similar to self.max_num_bbs, limits the number of trajectories to predict
+        # Trajectory normalization values (set empirically)
+        self.trajectory_min_x = -70
+        self.trajectory_min_y = -120
+        self.trajectory_max_x = 310
+        self.trajectory_max_y = 380
 
         self.use_dataset_pruning = True  # If true, prune the dataset of unimportant samples (see data.CARLA_Data._pruning_heuristic)
 

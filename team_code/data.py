@@ -809,8 +809,18 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
                     actor_traj.append(np.zeros((2)))
             all_trajectories[actor_n] = actor_traj
 
-        # These are now Ego_0-aligned trajectories for all actors visible in 0th timestep
+        # Finally, normalize the trajectories
+        all_trajectories = self.normalize_trajectories(all_trajectories)
+
+        # These are now normalized, Ego_0-aligned trajectories for all actors visible in 0th timestep
         return all_trajectories, mask
+
+    def normalize_trajectories(self, trajectory):
+        max_xy = np.array([self.config.trajectory_max_x, self.config.trajectory_max_y])
+        min_xy = np.array([self.config.trajectory_min_x, self.config.trajectory_min_y])
+        trajectory = trajectory - min_xy
+        trajectory = trajectory / (max_xy - min_xy)
+        return trajectory
 
     def _process_boxes(self, boxes_i, future_boxes_i, aug_translation, aug_rotation):
         bounding_boxes, future_bounding_boxes = self.parse_bounding_boxes(
