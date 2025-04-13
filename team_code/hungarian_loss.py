@@ -37,8 +37,8 @@ class HungarianLoss(torch.nn.Module):
         # Compute a per-trajectory validity flag for ground truth.
         # Here, if the sum of absolute values in a trajectory is not zero, it is considered valid.
         # Otherwise, it is most certainly just padding.
-        valid_indices = targets.abs().sum(dim=(2, 3)).not_equal(0).long()  # Shape: [N]
-        
+        valid_indices = targets.abs().sum(dim=(2, 3)).not_equal(0).long()  # Shape: [B, N]
+
         # Mask out invalid trajectory points
         # if some points are missing (e.g. actor is missing for some frame), we exclude them
         # We don't want to penalize the model for bad GTs
@@ -46,7 +46,7 @@ class HungarianLoss(torch.nn.Module):
             targets = targets * mask.unsqueeze(3)
 
         # Initialize the target confidences, which will contain the reordered valid targets (after matching)
-        target_confidences = torch.zeros(batch_size, num_queries).long()
+        target_confidences = torch.zeros(batch_size, num_queries).long().to(pred_confidence.device)
 
         total_traj_loss = 0.0
 
@@ -89,8 +89,8 @@ class HungarianLoss(torch.nn.Module):
             # Need to mask the matched preds as well
             # This is done per-batch as we need the correct ordering
             if mask is not None:
-                valid_indices = torch.where(valid_mask)[0]
-                mask_index = valid_indices[col_idx]
+                original_indices = torch.where(valid_mask)[0]
+                mask_index = original_indices[col_idx]
                 matched_preds = matched_preds * mask[b][mask_index].unsqueeze(2)
 
             # Update the target confidences
