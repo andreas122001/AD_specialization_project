@@ -169,7 +169,7 @@ def main():
     parser.add_argument(
         "--model_dir",
         type=str,
-        default="/cluster/work/andrebw/repos/temporal_garage/results",
+        default="/cluster/work/andrebw/repos/temporal_garage/results/training/stage2",
         help="Folder containing all the experiment folders.",
     )
     parser.add_argument(
@@ -303,7 +303,7 @@ def main():
                 )
                 os.makedirs(results_save_dir, exist_ok=True)
                 logs_save_dir = Path(
-                    f"evaluation/{experiment_name_root}/{exp_name}/{scenario}/logs"
+                    f"evaluation/{experiment_name_root}/{exp_name}/logs/{scenario}"
                 )
                 os.makedirs(logs_save_dir, exist_ok=True)
 
@@ -344,9 +344,9 @@ def main():
                 commands.append(f"./{bash_save_dir}/eval_{route}.sh $FREE_WORLD_PORT")
                 commands.append("sleep 2")
 
-                carla_world_port_start += 50
-                carla_streaming_port_start += 50
-                carla_tm_port_start += 50
+                carla_world_port_start = carla_world_port_start + 50 if carla_world_port_start < 60000 else 10000
+                carla_streaming_port_start = carla_streaming_port_start + 50 if carla_streaming_port_start < 60000 else 20000
+                carla_tm_port_start = carla_tm_port_start + 50 if carla_tm_port_start < 60000 else 30000
 
                 job_file = make_jobsub_file(
                     commands=commands,
@@ -407,9 +407,12 @@ def main():
                     # check whether result file is finished?
                     if os.path.exists(result_file):
                         with open(result_file, "r", encoding="utf-8") as f_result:
-                            evaluation_data = ujson.load(f_result)
-                        progress = evaluation_data["_checkpoint"]["progress"]
-
+                            progress = []
+                            try:
+                                evaluation_data = ujson.load(f_result)
+                                progress = evaluation_data["_checkpoint"]["progress"]
+                            except Exception as e:
+                                print(f"Failed to open {evaluation_data}: {e}")
                         if len(progress) < 2 or progress[0] < progress[1]:
                             need_to_resubmit = True
                         else:
@@ -439,6 +442,14 @@ def main():
                 if os.path.exists(result_file):
                     print("Remove file: ", result_file)
                     Path(result_file).unlink()
+                num_running_jobs, max_num_parallel_jobs = get_num_jobs(
+                    job_name=experiment_name_stem, username=username
+                )
+                print(f"{num_running_jobs}/{max_num_parallel_jobs} jobs are running...")
+                while num_running_jobs >= max_num_parallel_jobs:
+                    num_running_jobs, max_num_parallel_jobs = get_num_jobs(
+                        job_name=experiment_name_stem, username=username
+                    )
                 print(f"resubmit sbatch {job_file}")
                 jobid = (
                     subprocess.check_output(f"sbatch {job_file}", shell=True)
