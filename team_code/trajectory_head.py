@@ -82,3 +82,43 @@ class TrajectoryDecoder(nn.Module):
         confidence_logits = self.confidence_head(queries).squeeze(-1)  # (BZ, N, 2)
 
         return traj, confidence_logits
+
+
+class MultimodalTrajectoryDecoder(nn.Module):
+    def __init__(self, n_dim=256, n_layers=1, n_queries=10, n_modes=6, future_steps=6):
+        super().__init__()
+        self.future_steps = future_steps
+        self.n_modes = n_modes
+
+        self.query_embed = nn.Embedding(n_queries, n_dim)
+        self.layers = nn.ModuleList(
+            [TrajectoryDecoderLayer(n_dim) for _ in range(n_layers)]
+        )
+
+        # Prediction heads
+        self.traj_head = nn.Linear(n_dim, n_modes * future_steps * 2)  # (x,y) per timestep
+        self.query_confidence_head = nn.Linear(n_dim, 2)  # binary classification for object/no-object
+        self.mode_confidence_head = nn.Linear(n_dim, n_modes)  # binary classification for object/no-object
+
+        nn.init.uniform_(self.query_embed.weight, -1.0, 1.0)
+
+    def forward(self, temporal_features):
+        # temporal_features: (BZ, 65, 256)
+        batch_size = temporal_features.shape[0]
+
+        # Initialize learnable queries
+        queries = self.query_embed.weight.unsqueeze(0).repeat(
+            batch_size, 1, 1  # (BZ, N, 256)
+        )
+
+        # Process through decoder layers
+        for layer in self.layers:
+            queries = layer(queries, temporal_features)
+
+        # Final predictions
+        traj = self.traj_head(queries)  # (BZ, N, future_steps*2)
+        traj = traj.reshape(batch_size, -1, self.future_steps, 2)  # (BZ, N, future_steps, 2)
+        query_confidence_logits = self.query_confidence_head(queries).squeeze(-1)  # (BZ, N, 2)
+        mode_confidence_logits = self.mode_confidence_head(queries).squeeze(-1)  # (BZ, N, K)
+
+        return traj, (query_confidence_logits, mode_confidence_logits)

@@ -71,7 +71,7 @@ if __name__ == "__main__":
     B, N, K, F = 1, 3, 5, 3
 
     pred_trajectory = torch.zeros(B, N, K, F, 2)
-    pred_trajectory[:,0,0,:] = torch.tensor([1.0, 1.0])
+    pred_trajectory[:,0,1,:] = torch.tensor([1.0, 1.0])
     # pred_trajectory[:,0,:,:] = torch.tensor([2.1, 1.0])
 
     pred_confidence = torch.zeros(B, N, K, 2) + torch.tensor([1.0, -1.0])*10
