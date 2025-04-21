@@ -69,7 +69,7 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
         heuristic_pruning: bool = False,
     ) -> None:
 
-        self.data_root = "/".join(root[0].split("/")[:-1])
+        self.data_root = "/".join(root[0].split("/")[:-1]) if len(root) != 0 else ""
         self.heuristic_pruning = heuristic_pruning
 
         self.config = config
@@ -264,7 +264,7 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
         # because they only have 1 refcount.
         self.route_root = np.array(self.route_root).astype(np.string_)
         self.sample_start = np.array(self.sample_start)
-        if rank == 0:
+        if rank == 0 and len(root) != 0:
             print(f"Loading {len(self.route_root)} samples from {len(root)} scenarios")
             print("Total amount of routes:", total_routes)
             print("Skipped routes:", skipped_routes)
