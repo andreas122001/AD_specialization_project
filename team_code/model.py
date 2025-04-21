@@ -2,6 +2,7 @@
 The main model structure
 """
 
+import matplotlib.pyplot as plt
 from typing import Optional
 from config import GlobalConfig
 from temporal_modules import MHATemporalFusion
@@ -77,7 +78,7 @@ class LidarCenterNet(nn.Module):
         if self.config.use_trajectory_prediction:
             self.trajectory_head = TrajectoryDecoder(
                 n_dim=256, 
-                n_layers=1, 
+                n_layers=self.config.trajectory_decoder_layers, 
                 n_queries=self.config.max_num_trajectories, 
                 future_steps=self.config.trajectory_pred_len
             )
@@ -1179,6 +1180,9 @@ class LidarCenterNet(nn.Module):
         pred_speed=None,
         pred_target_speed_scalar=None,
         pred_bb=None,
+        pred_trajectories=None,
+        pred_trajectory_confidence=None,
+        temporal_attn_weights=None,
         gt_wp=None,
         gt_checkpoints=None,
         gt_bbs=None,
@@ -1434,6 +1438,40 @@ class LidarCenterNet(nn.Module):
         images_lidar = np.ascontiguousarray(images_lidar, dtype=np.uint8)
         rgb_image = rgb[0].permute(1, 2, 0).detach().cpu().numpy()
 
+        def denormalize(trajectory):
+            max_xy = np.array([self.config.trajectory_max_x, self.config.trajectory_max_y])
+            min_xy = np.array([self.config.trajectory_min_x, self.config.trajectory_min_y])
+            trajectory = trajectory * (max_xy - min_xy)
+            trajectory = trajectory + min_xy
+            return trajectory
+
+        if pred_trajectories is not None:
+            trajectories = pred_trajectories[0].detach().cpu().numpy()
+            if pred_trajectory_confidence is not None:
+                trajectories = trajectories[np.where(pred_trajectory_confidence.detach().cpu().numpy()[0, :, 1] > 0.5)]
+            for trajectory in trajectories:
+                trajectory = denormalize(trajectory) 
+                trajectory = trajectory * np.array([1,-1]) + np.array([0, 255])
+                trajectory = trajectory * scale_factor
+                for i, (x, y) in enumerate(trajectory):
+                    color = (i+i*12, i*18, 100 + (i*18))
+                    images_lidar = cv2.circle(
+                        images_lidar,
+                        (int(x), int(y)),
+                        radius=7,
+                        lineType=cv2.LINE_AA,
+                        color=color,
+                        thickness=-1,
+                    )
+                    if i != 0:
+                        images_lidar = cv2.line(
+                            images_lidar,
+                            (int(trajectory[i-1, 0]), int(trajectory[i-1, 1])),
+                            (int(x), int(y)),
+                            color=color,
+                            thickness=2,
+                        )
+
         if wp_selected is not None:
             colors_name = ["blue", "yellow"]
             colors_idx = [(0, 0, 255), (255, 255, 0)]
@@ -1489,8 +1527,24 @@ class LidarCenterNet(nn.Module):
                 cv2.LINE_AA,
             )
 
+        if temporal_attn_weights is not None:
+            # Only use the cross weights, not self weights
+            cross_weights = torch.stack([w[0] for w in temporal_attn_weights], axis=1)[0].mean(0).mean(0).cpu().detach().numpy()
+            f = plt.figure(figsize=(1, 8))
+            plt.axis('off')
+            plt.barh(np.arange(cross_weights.shape[0])[::-1], cross_weights)
+            plt.xlim(0,0.2)
+            plt.tight_layout()
+            f.canvas.draw()
+            img_plot = np.array(f.canvas.renderer.buffer_rgba())[:,:,:3]
+            images_lidar[-img_plot.shape[0]-1:-1, -img_plot.shape[1]-1:-1, :] = img_plot
+            plt.close(f)
+
         all_images = np.concatenate((rgb_image, images_lidar), axis=0)
         all_images = Image.fromarray(all_images.astype(np.uint8))
+
+        if save_path is None:
+            return all_images
 
         store_path = str(str(save_path) + (f"/{step:04}.png"))
         Path(store_path).parent.mkdir(parents=True, exist_ok=True)

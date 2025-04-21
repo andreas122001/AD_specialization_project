@@ -90,6 +90,7 @@ class SensorAgent(autonomous_agent.AutonomousAgent):
         self.config = GlobalConfig()
         # Overwrite all properties that were set in the saved config.
         self.config.__dict__.update(loaded_config.__dict__)
+        self.config.return_temporal_attn_weights = True
 
         # For models supporting different output modalities we select which one to use here.
         # 0: Waypoints
@@ -243,6 +244,12 @@ class SensorAgent(autonomous_agent.AutonomousAgent):
             self.save_path = None
 
         self.metric_info = {}
+        # See every n frames
+        see_every = 1 + self.config.data_save_freq * self.config.seq_step
+        self.spatiotemporal_feature_buffer = deque(maxlen=see_every)
+        # Prefill with Nones
+        [self.spatiotemporal_feature_buffer.append(None) for _ in range(see_every)]
+
 
     def _init(self):
         # The CARLA leaderboard does not expose the lat lon reference value of the GPS which make it impossible to use the
@@ -644,6 +651,8 @@ class SensorAgent(autonomous_agent.AutonomousAgent):
         wp_selected = None
         for i in range(self.model_count):
             if self.config.backbone in ("transFuser", "aim", "bev_encoder"):
+                # Get historic spatiotemporal features from the buffer
+                historic_features = self.spatiotemporal_feature_buffer.popleft()
                 (
                     pred_wp,
                     pred_target_speed,
@@ -653,11 +662,14 @@ class SensorAgent(autonomous_agent.AutonomousAgent):
                     pred_depth,
                     pred_bb_features,
                     pred_trajectories,
+                    pred_trajectory_confidence,
                     attention_weights,
                     pred_wp_1,
                     selected_path,
                     temporal_attn_weights,
-                ) = self.nets[i].forward(
+                    spatial_features,
+                    spatiotemporal_features,
+                ) = self.nets[i]._forward_step(
                     rgb=tick_data["rgb"],
                     lidar_bev=lidar_bev,
                     target_point=tick_data["target_point"],
@@ -668,7 +680,11 @@ class SensorAgent(autonomous_agent.AutonomousAgent):
                     ),
                     ego_vel=velocity,
                     command=tick_data["command"],
+                    historic_features=historic_features,
                 )
+                # Store features in buffer to use later (for temporal context)
+                self.spatiotemporal_feature_buffer.append(spatiotemporal_features)
+
                 # Only convert bounding boxes when they are used.
                 if self.config.detect_boxes and (
                     compute_debug_output
@@ -772,6 +788,7 @@ class SensorAgent(autonomous_agent.AutonomousAgent):
                 gt_speed=gt_velocity,
                 gt_wp=pred_wp_1,
                 wp_selected=wp_selected,
+                temporal_attn_weights=temporal_attn_weights,
             )
 
         if (

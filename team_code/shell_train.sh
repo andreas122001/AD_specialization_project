@@ -1,4 +1,4 @@
-export SLURM_JOB_NAME="dev"
+export SLURM_JOB_NAME="dev-2"
 
 echo $SLURM_JOB_ID
 
@@ -17,13 +17,14 @@ torchrun --nnodes=1 --nproc_per_node=1 --max_restarts=0 --rdzv_id=$SLURM_JOB_ID 
     --seed 0 \
     --epochs 31 \
     --batch_size 16 \
-    --seq_len 6 \
+    --seq_len 2 \
     --seq_step 1 \
     --use_temporal_fusion 1 \
     --use_recurrent_training 0 \
-    --temporal_fusion_layers 8 \
+    --temporal_fusion_layers 2 \
     --use_trajectory_prediction 1 \
-    --trajectory_pred_len 10 \
+    --trajectory_pred_len 6 \
+    --trajectory_step_size 2 \
     --use_semantic 1 \
     --use_bev_semantic 1 \
     --use_depth 1 \
@@ -42,4 +43,5 @@ torchrun --nnodes=1 --nproc_per_node=1 --max_restarts=0 --rdzv_id=$SLURM_JOB_ID 
     --use_cosine_schedule 1 \
     --cosine_t0 1 \
     --image_architecture regnety_032 \
-    --lidar_architecture regnety_032
+    --lidar_architecture regnety_032 \
+    --load_file $PROJECT_ROOT/results/training/tfpp_base/model_0030.pth

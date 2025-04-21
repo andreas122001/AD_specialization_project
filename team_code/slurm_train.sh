@@ -1,14 +1,14 @@
 #!/bin/bash
 #SBATCH --account=share-ie-idi
-#SBATCH --job-name=tfpp_base
+#SBATCH --job-name=stage1/tfpp_lidar_s2s1
 #SBATCH --ntasks=1
 #SBATCH --nodes=1
 #SBATCH --time=4-00:00:00
 #SBATCH --gres=gpu:2
 #SBATCH --mem=64gb
 #SBATCH --cpus-per-task=32
-#SBATCH -o /cluster/work/andrebw/repos/temporal_garage/results/logs/%x/tfpp_010_0_%a_%A.out  # File to which STDOUT will be written
-#SBATCH -e /cluster/work/andrebw/repos/temporal_garage/results/logs/%x/tfpp_010_0_%a_%A.out  # File to which STDERR will be written
+#SBATCH -o /cluster/work/andrebw/repos/temporal_garage/results/logs/%x/tfpp_%a_%A.out  # File to which STDOUT will be written
+#SBATCH -e /cluster/work/andrebw/repos/temporal_garage/results/logs/%x/tfpp_%a_%A.out  # File to which STDERR will be written
 #SBATCH --partition=GPUQ
 #SBATCH --constraint=(a100|h100)
 # #SBATCH --nodelist=idun-01-[01-06],idun-06-[01-07],idun-07-[08-10],idun-08-01
@@ -29,6 +29,9 @@ export DATASET=garage_v2
 export CARLA_ROOT=$PROJECT_ROOT/carla
 export PYTHONPATH="${CARLA_ROOT}/PythonAPI/carla/":${PYTHONPATH}
 
+# Architectures:
+# resnet34, regnety_032, video_resnet18, video_swin_tiny
+
 export OMP_NUM_THREADS=32  # Limits pytorch to spawn at most num cpus cores threads
 export OPENBLAS_NUM_THREADS=1  # Shuts off numpy multithreading, to avoid threads spawning other threads.
 torchrun --nnodes=1 --nproc_per_node=$NGPUS --max_restarts=0 --rdzv_id=$SLURM_JOB_ID --rdzv_backend=c10d \
@@ -38,14 +41,16 @@ torchrun --nnodes=1 --nproc_per_node=$NGPUS --max_restarts=0 --rdzv_id=$SLURM_JO
     --seed 0 \
     --epochs 31 \
     --batch_size $((32 / $NGPUS)) \
-    --use_temporal_fusion 1 \
-    --temporal_fusion_layers 1 \
-    --seq_len 2 \
+    --use_temporal_fusion 0 \
+    --use_recurrent_training 0 \
+    --temporal_fusion_layers 8 \
+    --seq_len 1 \
     --seq_step 1 \
-    --lidar_seq_len 1 \
+    --lidar_seq_len 2 \
     --lidar_step_size 1 \
     --use_trajectory_prediction 1 \
-    --trajectory_pred_len 10 \
+    --trajectory_pred_len 6 \
+    --trajectory_step_size 2 \
     --use_semantic 1 \
     --use_bev_semantic 1 \
     --use_depth 1 \
@@ -63,4 +68,5 @@ torchrun --nnodes=1 --nproc_per_node=$NGPUS --max_restarts=0 --rdzv_id=$SLURM_JO
     --cosine_t0 1 \
     --validation \
     --image_architecture regnety_032 \
-    --lidar_architecture regnety_032
+    --lidar_architecture video_swin_tiny
+    #    --load_file $PROJECT_ROOT/results/training/tfpp_base/model_0030.pth
