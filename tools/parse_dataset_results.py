@@ -5,8 +5,11 @@ from tqdm import tqdm
 import ujson
 
 root = "/cluster/work/andrebw/repos/temporal_garage/results/data/garage_v2_2025_03_25/results"
+#root = "/cluster/work/andrebw/repos/temporal_garage/evaluation/tfpp_s2s1_routes_validation_model_0030/tfpp_s2s1_routes_validation_e0_model_0030/results"
+root = "/cluster/work/andrebw/repos/temporal_garage/evaluation/tfpp_static_s5s2_routes_validation_model_0030/tfpp_static_s5s2_routes_validation_e0_model_0030/results"
+#root = "/cluster/work/andrebw/repos/temporal_garage/evaluation/tfpp_default_routes_validation_model_0030/tfpp_default_routes_validation_e0_model_0030/results"
 
-result_files = glob.glob(f"{root}/**/*_result.json", recursive=True)
+result_files = glob.glob(f"{root}/**/*.json", recursive=True)
 
 failed = 0
 success = 0
@@ -18,7 +21,10 @@ for result_path in tqdm(result_files):
     if scenario not in results.keys():
         results[scenario] = []
     with open(result_path, "rt", encoding="utf-8") as f:
-        results_route = ujson.load(f)
+        try:
+            results_route = ujson.load(f)
+        except Exception as e:
+            print(f"Failed to open {result_path}: {e}")
         if "scores_mean" not in results_route["_checkpoint"]["global_record"]:
             failed += 1
             continue
@@ -69,7 +75,7 @@ print(f"Success: {success} / {success + failed}")
 print()
 
 from pathlib import Path
-save_path = f"{root}/../dataset_results.json"
+save_path = "/".join(root.split("/")[:-1]) + "/results.json"
 print(Path(save_path))
 with open(save_path, "w") as f:
     ujson.dump(results, f, indent=4)
