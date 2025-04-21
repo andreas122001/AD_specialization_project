@@ -1529,11 +1529,30 @@ class LidarCenterNet(nn.Module):
 
         if temporal_attn_weights is not None:
             # Only use the cross weights, not self weights
-            cross_weights = torch.stack([w[0] for w in temporal_attn_weights], axis=1)[0].mean(0).mean(0).cpu().detach().numpy()
+            cross_weights = torch.stack([w[0] for w in temporal_attn_weights], axis=1)[0].mean(0).detach().cpu()
+
+            maxes, _ = cross_weights.max(dim=0)
+            mins, _ = cross_weights.min(dim=0)
+            means = cross_weights.mean(dim=0)
+
             f = plt.figure(figsize=(1, 8))
             plt.axis('off')
-            plt.barh(np.arange(cross_weights.shape[0])[::-1], cross_weights)
-            plt.xlim(0,0.2)
+            plt.xlim(0,0.5)
+
+            for i, (min_, max_, mean) in enumerate(zip(mins, maxes, means)):
+                err = np.array([min_.unsqueeze(-1), max_.unsqueeze(-1)])
+                x = mean.unsqueeze(-1).numpy()
+                plt.errorbar(
+                    x=x,
+                    y=i,
+                    xerr=err,
+                    fmt='o',
+                    capsize=2,
+                    label="Cross Weight",
+                    markersize=5,
+                    alpha=1.0,
+                )
+
             plt.tight_layout()
             f.canvas.draw()
             img_plot = np.array(f.canvas.renderer.buffer_rgba())[:,:,:3]
