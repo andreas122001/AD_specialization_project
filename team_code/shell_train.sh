@@ -23,6 +23,7 @@ torchrun --nnodes=1 --nproc_per_node=1 --max_restarts=0 --rdzv_id=$SLURM_JOB_ID 
     --use_recurrent_training 0 \
     --temporal_fusion_layers 2 \
     --use_trajectory_prediction 1 \
+    --use_trajectory_target_speed_mask 1 \
     --trajectory_pred_len 6 \
     --trajectory_step_size 2 \
     --use_semantic 1 \

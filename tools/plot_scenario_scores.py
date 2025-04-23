@@ -10,8 +10,8 @@ def main():
 
     files = [
         "tfpp_s2s1",
-        "tfpp_default",
-        # "tfpp_static_s5s2"
+        "tfpp_s2s1_old",
+        "tfpp_default_old"
     ]  # Replace with your files
     score_type = "score_composed"  # Choose score_route, score_penalty, etc.
     score_types = {
@@ -81,6 +81,7 @@ def main():
     plt.legend(bbox_to_anchor=(1.1, 1.05), title="Model Version")
 
     plt.tight_layout()
+    #plt.save('plot.png')
     plt.show()
 
 if __name__ == "__main__":

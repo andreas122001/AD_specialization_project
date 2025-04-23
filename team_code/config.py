@@ -727,6 +727,7 @@ class GlobalConfig:
         self.trajectory_pred_len = 6
         self.trajectory_step_size = 1
         self.trajectory_decoder_layers = 1
+        self.use_trajectory_target_speed_mask = True
         self.max_num_trajectories = 20  # similar to self.max_num_bbs, limits the number of trajectories to predict
         # Trajectory normalization values (set empirically)
         self.trajectory_min_x = -70

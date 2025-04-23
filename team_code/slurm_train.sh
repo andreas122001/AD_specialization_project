@@ -49,6 +49,7 @@ torchrun --nnodes=1 --nproc_per_node=$NGPUS --max_restarts=0 --rdzv_id=$SLURM_JO
     --lidar_seq_len 2 \
     --lidar_step_size 1 \
     --use_trajectory_prediction 1 \
+    --use_trajectory_target_speed_mask 1 \
     --trajectory_pred_len 6 \
     --trajectory_step_size 2 \
     --use_semantic 1 \
@@ -68,5 +69,5 @@ torchrun --nnodes=1 --nproc_per_node=$NGPUS --max_restarts=0 --rdzv_id=$SLURM_JO
     --cosine_t0 1 \
     --validation \
     --image_architecture regnety_032 \
-    --lidar_architecture video_swin_tiny
-    #    --load_file $PROJECT_ROOT/results/training/tfpp_base/model_0030.pth
+    --lidar_architecture regnety_032 \
+    --load_file $PROJECT_ROOT/results/training/tfpp_base/model_0030.pth

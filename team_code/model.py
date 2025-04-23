@@ -778,7 +778,10 @@ class LidarCenterNet(nn.Module):
         pred_trajectory_confidence = None
         # Not used if not using temporal context
         if self.config.use_trajectory_prediction and max(self.config.seq_len, self.config.lidar_seq_len, self.config.img_seq_len) > 1:
-            masked_features = fused_features[:, :64, :]  # mask out potential extra tokens
+            if self.config.use_trajectory_target_speed_mask:
+                masked_features = fused_features[:, :64, :]  # mask out potential extra tokens
+            else:
+                masked_features = fused_features
             (pred_trajectories, pred_trajectory_confidence) = self.trajectory_head(masked_features)
 
         return (

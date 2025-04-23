@@ -575,7 +575,13 @@ def main():
         type=int,
         default=config.use_trajectory_prediction,
         help="use a trajectory prediction head to predict other objects trajectories",
-    )    
+    )
+    parser.add_argument(
+        "--use_trajectory_target_speed_mask",
+        type=int,
+        default=config.use_trajectory_target_speed_mask,
+        help="whether to mask out target speed token in trajectory decoder or not",
+    )
     parser.add_argument(
         "--trajectory_pred_len",
         type=int,
