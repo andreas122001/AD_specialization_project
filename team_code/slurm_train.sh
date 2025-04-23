@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --account=share-ie-idi
-#SBATCH --job-name=stage1/tfpp_lidar_s2s1
+#SBATCH --job-name=stage2/tfpp_default
 #SBATCH --ntasks=1
 #SBATCH --nodes=1
 #SBATCH --time=4-00:00:00
@@ -41,17 +41,18 @@ torchrun --nnodes=1 --nproc_per_node=$NGPUS --max_restarts=0 --rdzv_id=$SLURM_JO
     --seed 0 \
     --epochs 31 \
     --batch_size $((32 / $NGPUS)) \
-    --use_temporal_fusion 0 \
+    --use_temporal_fusion 1 \
     --use_recurrent_training 0 \
-    --temporal_fusion_layers 8 \
-    --seq_len 1 \
+    --temporal_fusion_layers 4 \
+    --seq_len 2 \
     --seq_step 1 \
-    --lidar_seq_len 2 \
+    --lidar_seq_len 1 \
     --lidar_step_size 1 \
     --use_trajectory_prediction 1 \
     --use_trajectory_target_speed_mask 1 \
     --trajectory_pred_len 6 \
     --trajectory_step_size 2 \
+    --trajectory_modes 6 \
     --use_semantic 1 \
     --use_bev_semantic 1 \
     --use_depth 1 \

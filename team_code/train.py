@@ -587,6 +587,12 @@ def main():
         type=int,
         default=config.trajectory_pred_len,
         help="prediction length of other trajectories",
+    )
+    parser.add_argument(
+        "--trajectory_modes",
+        type=int,
+        default=config.trajectory_modes,
+        help="how many possible trajectory modes to predict",
     )    
     parser.add_argument(
         "--trajectory_step_size",
@@ -774,8 +780,10 @@ def main():
         print(f"config.seq_len: {config.seq_len}", flush=True)
         print(f"config.seq_step: {config.seq_step}", flush=True)
         print(f"config.use_trajectory_prediction: {config.use_trajectory_prediction}", flush=True)
-        print(f"config.trajectory_pred_len: {config.trajectory_pred_len}", flush=True)
-        print(f"config.trajectory_step_size: {config.trajectory_step_size}", flush=True)
+        if config.use_trajectory_prediction:
+            print(f"config.trajectory_modes: {config.trajectory_modes}", flush=True)
+            print(f"config.trajectory_pred_len: {config.trajectory_pred_len}", flush=True)
+            print(f"config.trajectory_step_size: {config.trajectory_step_size}", flush=True)
 
     # Create model and optimizers
     if config.use_plant:

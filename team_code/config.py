@@ -719,13 +719,14 @@ class GlobalConfig:
         self.use_recurrent_training = True   
         self.return_temporal_attn_weights = False  # Whether to return the attention weights of the temporal fusion module, for attn. vis.
         self.temporal_fusion_heads = 4  # per-head dim would be 64 -> 256/4
-        self.temporal_fusion_layers = 8  # how many fusion layers to use 
+        self.temporal_fusion_layers = 4  # how many fusion layers to use 
         self.temporal_hidden_dim = 512
         self.use_learnable_historic_initialization = True  # Whether to learn initial historic tokens, else use zeros
 
         self.use_trajectory_prediction = False  # Whether to use trajectory prediction as auxiliary task
         self.trajectory_pred_len = 6
-        self.trajectory_step_size = 1
+        self.trajectory_modes = 6  # number of trajectory modes for multimodal trajectory prediction
+        self.trajectory_step_size = 2
         self.trajectory_decoder_layers = 1
         self.use_trajectory_target_speed_mask = True
         self.max_num_trajectories = 20  # similar to self.max_num_bbs, limits the number of trajectories to predict

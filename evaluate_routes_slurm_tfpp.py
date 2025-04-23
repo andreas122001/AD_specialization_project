@@ -366,6 +366,7 @@ def main():
                     num_running_jobs, max_num_parallel_jobs = get_num_jobs(
                         job_name=experiment_name_stem, username=username
                     )
+                    time.sleep(2)
                 time.sleep(0.05)
                 print(
                     f"Submitting job {job_nr}/{len(route_files) * num_repetitions}: {job_file}"
@@ -450,6 +451,8 @@ def main():
                     num_running_jobs, max_num_parallel_jobs = get_num_jobs(
                         job_name=experiment_name_stem, username=username
                     )
+                    time.sleep(2)
+
                 print(f"resubmit sbatch {job_file}")
                 jobid = (
                     subprocess.check_output(f"sbatch {job_file}", shell=True)

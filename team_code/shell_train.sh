@@ -16,7 +16,7 @@ torchrun --nnodes=1 --nproc_per_node=1 --max_restarts=0 --rdzv_id=$SLURM_JOB_ID 
     --crop_image 1 \
     --seed 0 \
     --epochs 31 \
-    --batch_size 16 \
+    --batch_size 2 \
     --seq_len 2 \
     --seq_step 1 \
     --use_temporal_fusion 1 \
@@ -26,6 +26,7 @@ torchrun --nnodes=1 --nproc_per_node=1 --max_restarts=0 --rdzv_id=$SLURM_JOB_ID 
     --use_trajectory_target_speed_mask 1 \
     --trajectory_pred_len 6 \
     --trajectory_step_size 2 \
+    --trajectory_modes 32 \
     --use_semantic 1 \
     --use_bev_semantic 1 \
     --use_depth 1 \

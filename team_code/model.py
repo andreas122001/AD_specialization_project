@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 from typing import Optional
 from config import GlobalConfig
 from temporal_modules import MHATemporalFusion
-from hungarian_loss import HungarianLoss
+from trajectory_loss import MultiModalHungarianLoss
 import transfuser_utils as t_u
 from focal_loss import FocalLoss
 import numpy as np
@@ -16,7 +16,7 @@ from transfuser import (
     TransformerDecoderLayerWithAttention,
     TransformerDecoderWithAttention,
 )
-from trajectory_head import TrajectoryDecoder
+from trajectory_head import MultimodalTrajectoryDecoder
 from bev_encoder import BevEncoder
 from aim import AIMBackbone
 from center_net import LidarCenterNetHead
@@ -76,10 +76,11 @@ class LidarCenterNet(nn.Module):
             self.head = LidarCenterNetHead(self.config)
 
         if self.config.use_trajectory_prediction:
-            self.trajectory_head = TrajectoryDecoder(
+            self.trajectory_head = MultimodalTrajectoryDecoder(
                 n_dim=256, 
                 n_layers=self.config.trajectory_decoder_layers, 
-                n_queries=self.config.max_num_trajectories, 
+                n_queries=self.config.max_num_trajectories,
+                n_modes=self.config.trajectory_modes, 
                 future_steps=self.config.trajectory_pred_len
             )
 
@@ -394,7 +395,7 @@ class LidarCenterNet(nn.Module):
             self.selection_loss = nn.BCEWithLogitsLoss()
 
         if self.config.use_trajectory_prediction:
-            self.trajectory_loss = HungarianLoss()
+            self.trajectory_loss = MultiModalHungarianLoss()
 
         if self.config.use_temporal_fusion and self.config.seq_len > 1:
             self.temporal_fusor = MHATemporalFusion(
