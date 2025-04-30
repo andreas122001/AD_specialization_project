@@ -907,7 +907,7 @@ class LidarCenterNet(nn.Module):
         if self.config.use_trajectory_prediction:
             # Should return trajectories and traj confidences as a dict
             loss_trajectory = self.trajectory_loss(
-                outputs=(pred_trajectories, pred_trajectory_confidence),
+                predictions=(pred_trajectories, pred_trajectory_confidence),
                 targets=trajectories_label, 
                 mask=trajectories_mask
             )
@@ -1449,32 +1449,35 @@ class LidarCenterNet(nn.Module):
             trajectory = trajectory + min_xy
             return trajectory
 
-        if pred_trajectories is not None:
+        if pred_trajectories is not None and pred_trajectory_confidence is not None:
             trajectories = pred_trajectories[0].detach().cpu().numpy()
-            if pred_trajectory_confidence is not None:
-                trajectories = trajectories[np.where(pred_trajectory_confidence.detach().cpu().numpy()[0, :, 1] > 0.5)]
+            pred_trajectory_confidence = pred_trajectory_confidence[0].detach().cpu().numpy()  # [N, K]
+
+            # trajectories = trajectories[np.where(pred_trajectory_confidence[:, 0] < 0.5)]
             for trajectory in trajectories:
                 trajectory = denormalize(trajectory) 
                 trajectory = trajectory * np.array([1,-1]) + np.array([0, 255])
                 trajectory = trajectory * scale_factor
-                for i, (x, y) in enumerate(trajectory):
-                    color = (i+i*12, i*18, 100 + (i*18))
-                    images_lidar = cv2.circle(
-                        images_lidar,
-                        (int(x), int(y)),
-                        radius=7,
-                        lineType=cv2.LINE_AA,
-                        color=color,
-                        thickness=-1,
-                    )
-                    if i != 0:
-                        images_lidar = cv2.line(
+                for mode in trajectory:
+                    # mode_confidence = 
+                    for j, (x, y) in enumerate(mode):
+                        color = (j+j*12, j*18, 100 + (j*18))
+                        images_lidar = cv2.circle(
                             images_lidar,
-                            (int(trajectory[i-1, 0]), int(trajectory[i-1, 1])),
                             (int(x), int(y)),
+                            radius=7,
+                            lineType=cv2.LINE_AA,
                             color=color,
-                            thickness=2,
+                            thickness=-1,
                         )
+                        if j != 0:
+                            images_lidar = cv2.line(
+                                images_lidar,
+                                (int(mode[j-1, 0]), int(mode[j-1, 1])),
+                                (int(x), int(y)),
+                                color=color,
+                                thickness=2,
+                            )
 
         if wp_selected is not None:
             colors_name = ["blue", "yellow"]

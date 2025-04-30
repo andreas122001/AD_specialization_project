@@ -4,10 +4,11 @@ import numpy as np
 from tqdm import tqdm
 import ujson
 
-root = "/cluster/work/andrebw/repos/temporal_garage/results/data/garage_v2_2025_03_25/results"
-root = "/cluster/work/andrebw/repos/temporal_garage/evaluation/tfpp_s2s1_old_routes_validation_model_0030/tfpp_s2s1_old_routes_validation_e0_model_0030/results"
+# root = "/cluster/work/andrebw/repos/temporal_garage/results/data/garage_v2_2025_03_25/results"
+# root = "/cluster/work/andrebw/repos/temporal_garage/evaluation/tfpp_s2s1_old_routes_validation_model_0030/tfpp_s2s1_old_routes_validation_e0_model_0030/results"
 #root = "/cluster/work/andrebw/repos/temporal_garage/evaluation/tfpp_static_s5s2_routes_validation_model_0030/tfpp_static_s5s2_routes_validation_e0_model_0030/results"
-#root = "/cluster/work/andrebw/repos/temporal_garage/evaluation/tfpp_default_routes_validation_model_0030/tfpp_default_routes_validation_e0_model_0030/results"
+root = "/cluster/work/andrebw/repos/temporal_garage/evaluation/routes_validation/tfpp_default_e30/rep0/results"
+#root = "/cluster/work/andrebw/repos/temporal_garage/evaluation/routes_validation/tfpp_default_e30/rep0/results"
 
 result_files = glob.glob(f"{root}/**/*.json", recursive=True)
 
@@ -50,6 +51,21 @@ for scenario, scenario_res in results.items():
             "score_route": np.std(score_route),
             "score_penalty": np.std(score_penalty),
             "score_composed": np.std(score_composed)
+        },
+        "scores_min": {
+            "score_route": np.min(score_route),
+            "score_penalty": np.min(score_penalty),
+            "score_composed": np.min(score_composed)
+        },
+        "scores_max": {
+            "score_route": np.max(score_route),
+            "score_penalty": np.max(score_penalty),
+            "score_composed": np.max(score_composed)
+        },
+        "count": {
+            "score_route": len(score_route),
+            "score_penalty": len(score_penalty),
+            "score_composed": len(score_composed)
         }
     }
 
@@ -58,24 +74,39 @@ score_penalty = [entry["scores_mean"]["score_penalty"] for entry in results.valu
 score_composed = [entry["scores_mean"]["score_composed"] for entry in results.values()]
 
 results['Total'] = {
+    # Notice, the stats here are across scenarios, not routes in total
     "scores_mean": {
         "score_route": np.mean(scores_route),
         "score_penalty": np.mean(score_penalty),
         "score_composed": np.mean(score_composed)
     },
-    # Notice, the std here is across scenarios, not routes in total
     "scores_std": {
         "score_route": np.std(scores_route),
         "score_penalty": np.std(score_penalty),
         "score_composed": np.std(score_composed)
     },
+    "scores_min": {
+        "score_route": np.min(score_route),
+        "score_penalty": np.min(score_penalty),
+        "score_composed": np.min(score_composed)
+    },
+    "scores_max": {
+        "score_route": np.max(score_route),
+        "score_penalty": np.max(score_penalty),
+        "score_composed": np.max(score_composed)
+    },
+    "count": {
+        "score_route": len(score_route),
+        "score_penalty": len(score_penalty),
+        "score_composed": len(score_composed)
+    }
 }
 
 print(f"Success: {success} / {success + failed}")
 print()
 
 from pathlib import Path
-save_path = "/".join(root.split("/")[:-1]) + "/results.json"
+save_path = "/".join(root.split("/")[:-1]) + "/results2.json"
 print(Path(save_path))
 with open(save_path, "w") as f:
     ujson.dump(results, f, indent=4)
