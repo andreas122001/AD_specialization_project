@@ -1451,33 +1451,36 @@ class LidarCenterNet(nn.Module):
 
         if pred_trajectories is not None and pred_trajectory_confidence is not None:
             trajectories = pred_trajectories[0].detach().cpu().numpy()
-            pred_trajectory_confidence = pred_trajectory_confidence[0].detach().cpu().numpy()  # [N, K]
+            trajectory_confidence = pred_trajectory_confidence[0].detach().cpu().numpy()  # [N, K]
+            valid = trajectory_confidence.argmax(-1) != (trajectory_confidence.shape[-1] - 1)  # *where* class is not background
+            modes = trajectory_confidence.argmax(-1)[np.where(valid)]  # *the classes* that are not background
 
-            # trajectories = trajectories[np.where(pred_trajectory_confidence[:, 0] < 0.5)]
-            for trajectory in trajectories:
+            valid_mm_trajectories = trajectories[np.where(valid)]  # multimodal
+            # gather tensor at dim=1 given modes
+            selected_trajectories = valid_mm_trajectories[np.arange(valid_mm_trajectories.shape[0]), modes]  # unimodal
+
+            for trajectory in selected_trajectories:
                 trajectory = denormalize(trajectory) 
-                trajectory = trajectory * np.array([1,-1]) + np.array([0, 255])
+                trajectory = trajectory * np.array([1,-1]) + np.array([0, 255])  # fit to image
                 trajectory = trajectory * scale_factor
-                for mode in trajectory:
-                    # mode_confidence = 
-                    for j, (x, y) in enumerate(mode):
-                        color = (j+j*12, j*18, 100 + (j*18))
-                        images_lidar = cv2.circle(
+                for j, (x, y) in enumerate(trajectory):
+                    color = (j+j*12, j*18, 100 + (j*18))
+                    images_lidar = cv2.circle(
+                        images_lidar,
+                        (int(x), int(y)),
+                        radius=4,
+                        lineType=cv2.LINE_AA,
+                        color=color,
+                        thickness=-1,
+                    )
+                    if j != 0:
+                        images_lidar = cv2.line(
                             images_lidar,
+                            (int(trajectory[j-1, 0]), int(trajectory[j-1, 1])),
                             (int(x), int(y)),
-                            radius=7,
-                            lineType=cv2.LINE_AA,
                             color=color,
-                            thickness=-1,
+                            thickness=1,
                         )
-                        if j != 0:
-                            images_lidar = cv2.line(
-                                images_lidar,
-                                (int(mode[j-1, 0]), int(mode[j-1, 1])),
-                                (int(x), int(y)),
-                                color=color,
-                                thickness=2,
-                            )
 
         if wp_selected is not None:
             colors_name = ["blue", "yellow"]

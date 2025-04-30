@@ -789,6 +789,8 @@ class SensorAgent(autonomous_agent.AutonomousAgent):
                 gt_wp=pred_wp_1,
                 wp_selected=wp_selected,
                 temporal_attn_weights=temporal_attn_weights,
+                pred_trajectories=pred_trajectories,
+                pred_trajectory_confidence=pred_trajectory_confidence,
             )
 
         if (
