@@ -602,17 +602,23 @@ def main():
         help="prediction length of other trajectories",
     )
     parser.add_argument(
-        "--trajectory_modes",
-        type=int,
-        default=config.trajectory_modes,
-        help="how many possible trajectory modes to predict",
-    )    
-    parser.add_argument(
         "--trajectory_step_size",
         type=int,
         default=config.trajectory_step_size,
         help="how many frames between each trajectory point",
     )
+    parser.add_argument(
+        "--trajectory_decoder_layers",
+        type=int,
+        default=config.trajectory_decoder_layers,
+        help="how many layers the trajectory decoder should have",
+    )      
+    parser.add_argument(
+        "--trajectory_modes",
+        type=int,
+        default=config.trajectory_modes,
+        help="how many possible trajectory modes to predict",
+    )    
 
     args = parser.parse_args()
     args.logdir = os.path.join(args.logdir, args.id)

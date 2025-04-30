@@ -51,6 +51,7 @@ torchrun --nnodes=1 --nproc_per_node=$NGPUS --max_restarts=0 --rdzv_id=$SLURM_JO
     --lidar_seq_len 1 \
     --lidar_step_size 1 \
     --use_trajectory_prediction 1 \
+    --trajectory_decoder_layers 1 \
     --trajectory_loss_type huber \
     --use_trajectory_target_speed_mask 1 \
     --trajectory_pred_len 6 \
