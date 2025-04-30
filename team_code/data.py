@@ -271,7 +271,7 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
             print("Trainable routes:", trainable_routes)
             print(f"Maximum dataset size: {len(self.route_root) + pruned_samples}")
             print(f"Pruned {pruned_samples} samples ("
-                  f"{pruned_samples / (len(self.route_root) + pruned_samples):.1%} of dataset)")
+                f"{pruned_samples / max(len(self.route_root) + pruned_samples, 1):.1%} of dataset)")
 
     def __len__(self):
         """Returns the length of the dataset."""
@@ -772,7 +772,7 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
 
         # Loop over all timesteps
         all_timesteps = []  # id->pos mapping across all timesteps F
-        for boxes in temporal_boxes:  # [F, n, ...]
+        for t, boxes in enumerate(temporal_boxes):  # [F, n, :]
 
             # Parse the boxes
             parsed_boxes, orig_boxes = self.parse_bounding_boxes_traj(
@@ -785,8 +785,10 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
             # For all actors in this timestep, get their id and their relative position
             id_to_xy = {}
             for box_data, box in zip(parsed_boxes, orig_boxes):
+                x, y = box_data[:2]
                 if box['id'] in valid_ids:
-                    id_to_xy[box['id']] = box_data[:2]  # [x, y]
+                    if t != 0 or not y > 255:
+                        id_to_xy[box['id']] = x, y
             all_timesteps.append(id_to_xy)
 
         # Create a mask for valid trajectory points,
@@ -796,18 +798,26 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
         # For all actors (up to a limit), for all timesteps, get the position of that actor at that timestep
         # If position is found, append position and set mask to 1
         # Else, append zero and set mask to 0
-        all_trajectories = np.zeros((N, F, 2))  # [N, F, 2]
-        for actor_n, actor in enumerate(valid_ids[: N]): # [min(n,N)], truncate if >N
-            actor_traj = []
+        n = valid_ids.__len__()
+        xy_lim = np.array([  # mark oob as zero mask
+            [self.config.trajectory_min_x, self.config.trajectory_min_y], 
+            [self.config.trajectory_max_x, self.config.trajectory_max_y]
+        ])
+        all_trajectories = np.zeros((max(n, N), F, 2))  # [n|N, F, 2]
+        for actor_n, actor in enumerate(valid_ids): # [min(n,N)], truncate if >N
+            actor_traj = np.zeros((F, 2))
             for t, id_to_pos in enumerate(all_timesteps):  # [F, n]
                 pos = id_to_pos.get(actor, None)
+                # If actor does exist in this timestep, set point and mask
                 if pos is not None:
-                    actor_traj.append(pos)
-                    mask[actor_n, t] = 1
-                # If actor does not exists in this timestep, set point to (0,0) and mask to 0
-                else:
-                    actor_traj.append(np.zeros((2)))
+                    actor_traj[t] = pos
+                    # Only valid if within bounds
+                    if (pos > xy_lim[0]).all() and (pos < xy_lim[1]).all():
+                        mask[actor_n, t] = 1
+
             all_trajectories[actor_n] = actor_traj
+
+        all_trajectories = all_trajectories[: N]  # truncate to max num trajs (N)
 
         # Finally, normalize the trajectories
         all_trajectories = self.normalize_trajectories(all_trajectories)
@@ -1690,7 +1700,7 @@ if __name__ == "__main__":
     )
     # for data in tqdm(dataset):
     #     ...
-    # sample = dataset.__getitem__(90)
+    sample = dataset.__getitem__(90)
     # print("\nShapes:")
     # for k, v in sample.items():
     #     if isinstance(v, np.ndarray):
@@ -1699,5 +1709,5 @@ if __name__ == "__main__":
     #         else:
     #             print(f"'{k}': shape[{v.shape}]")
     # print()
-    # print(sample.keys())
+    print(sample.keys())
 
