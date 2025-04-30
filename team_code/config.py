@@ -722,6 +722,7 @@ class GlobalConfig:
         self.temporal_fusion_layers = 4  # how many fusion layers to use 
         self.temporal_hidden_dim = 512
         self.use_learnable_historic_initialization = True  # Whether to learn initial historic tokens, else use zeros
+        self.use_temporal_self_attn = True  # Whether to use self-attention in the temporal fusion module
 
         self.use_trajectory_prediction = False  # Whether to use trajectory prediction as auxiliary task
         self.trajectory_pred_len = 6

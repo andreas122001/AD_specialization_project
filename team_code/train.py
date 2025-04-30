@@ -569,6 +569,12 @@ def main():
         type=int,
         default=config.use_recurrent_training,
         help="use recurrent training (train with full BPTT, high compute)",
+    )  
+    parser.add_argument(
+        "--use_temporal_self_attn",
+        type=int,
+        default=config.use_temporal_self_attn,
+        help="whether t o use self attention in the temporal fusion module",
     )    
     parser.add_argument(
         "--use_trajectory_prediction",

@@ -406,6 +406,7 @@ class LidarCenterNet(nn.Module):
                 dropout=0.1,
                 use_attn_weights=self.config.return_temporal_attn_weights,
                 learnable_init=self.config.use_learnable_historic_initialization,
+                use_self_attn=self.config.use_temporal_self_attn,
             )
 
     def reset_parameters(self):
