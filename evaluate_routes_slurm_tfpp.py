@@ -99,19 +99,19 @@ python3 -u ${LEADERBOARD_ROOT}/leaderboard/leaderboard_evaluator_local.py \
 
 
 def make_jobsub_file(commands, job_number, exp_name, exp_root_name, partition):
-    os.makedirs(f"evaluation/{exp_root_name}/{exp_name}/run_files/logs", exist_ok=True)
+    os.makedirs(f"evaluation/{exp_root_name}/slurm/logs", exist_ok=True)
     os.makedirs(
-        f"evaluation/{exp_root_name}/{exp_name}/run_files/job_files", exist_ok=True
+        f"evaluation/{exp_root_name}/slurm/job_files", exist_ok=True
     )
     job_file = (
-        f"evaluation/{exp_root_name}/{exp_name}/run_files/job_files/{job_number}.sh"
+        f"evaluation/{exp_root_name}/slurm/job_files/{job_number}.sh"
     )
     qsub_template = f"""#!/bin/bash
 #SBATCH --job-name={exp_name}{job_number}
 #SBATCH --partition={partition}
 #SBATCH --account=share-ie-idi
-#SBATCH -o evaluation/{exp_root_name}/{exp_name}/run_files/logs/qsub_out{job_number}.log
-#SBATCH -e evaluation/{exp_root_name}/{exp_name}/run_files/logs/qsub_out{job_number}.log
+#SBATCH -o evaluation/{exp_root_name}/slurm/logs/qsub_out{job_number}.log
+#SBATCH -e evaluation/{exp_root_name}/slurm/logs/qsub_out{job_number}.log
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
@@ -157,13 +157,14 @@ def main():
         "--benchmark",
         type=str,
         default="routes_validation",
+        choices=["longest6", "routes_validation"],
         help="Route files need to be stored in {benchmark}_split folder"
         "Options: , longest6, routes_validation",
     )
     parser.add_argument(
         "--experiment",
         type=str,
-        default="tfpp_base",
+        default="tfpp_default",
         help="Name of folder where the model files are stored in e.g. tfpp_020_0",
     )
     parser.add_argument(
@@ -224,11 +225,11 @@ def main():
     carla_root = args.carla_root
     partition = args.partition
     username = args.username
-    experiment_name_stem = f"{experiment}_{benchmark}"
+    experiment_name_stem = f"{experiment}"
     exp_names_tmp = []
     seeds = []
     for i in range(num_repetitions):
-        exp_names_tmp.append(experiment_name_stem + f"_e{i}")
+        exp_names_tmp.append(f"{experiment_name_stem}_r{i}")
         seeds.append(i)
     # route_path = f'leaderboard/data/{benchmark}_split/'
     # route_path = f"data/town13_selection/"
@@ -243,14 +244,16 @@ def main():
 
     epochs = args.epochs
     job_nr = 0
+    # Store in evaluation/{benchmark}/{model_epoch}/{repetition}/...
     experiment_result_folders = []
     for epoch in epochs:
         # Root folder in which each of the evaluation seeds will be stored
-        experiment_name_root = experiment_name_stem + "_" + epoch
+        name_suffix = f"e{int(epoch.split('_')[-1])}"
+        experiment_name_root = f"{benchmark}/{experiment}_{name_suffix}"
         experiment_result_folders.append(experiment_name_root)
         exp_names = []
         for name in exp_names_tmp:
-            exp_names.append(name + "_" + epoch)
+            exp_names.append(name)
 
         checkpoint = experiment
         checkpoint_new_name = checkpoint + "_" + epoch
@@ -269,12 +272,6 @@ def main():
             print(cmd)
             os.system(cmd)
 
-        # route_files = []
-        # for root, _, files in os.walk(route_path):
-        #     for name in files:
-        #         if fnmatch.fnmatch(name, route_pattern):
-        #             route_files.append(os.path.join(root, name))
-
         for exp_name in exp_names:
             bash_save_dir = Path(
                 f"evaluation/{experiment_name_root}/{exp_name}/run_bashs"
@@ -283,6 +280,7 @@ def main():
                 f"evaluation/{experiment_name_root}/{exp_name}/results"
             )
             logs_save_dir = Path(f"evaluation/{experiment_name_root}/{exp_name}/logs")
+
             bash_save_dir.mkdir(parents=True, exist_ok=True)
             results_save_dir.mkdir(parents=True, exist_ok=True)
             logs_save_dir.mkdir(parents=True, exist_ok=True)
