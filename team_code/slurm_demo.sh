@@ -1,12 +1,12 @@
 #!/bin/bash
 #SBATCH --account=share-ie-idi
-#SBATCH --job-name=v1/static-LB5s1-L2
+#SBATCH --job-name=demo/l1-focal-s5-l1
 #SBATCH --ntasks=1
 #SBATCH --nodes=1
-#SBATCH --time=5-00:00:00
-#SBATCH --gres=gpu:4
+#SBATCH --time=0-05:00:00
+#SBATCH --gres=gpu:1
 #SBATCH --mem=32gb
-#SBATCH --cpus-per-task=16
+#SBATCH --cpus-per-task=8
 #SBATCH -o /cluster/work/andrebw/repos/temporal_garage/results/logs/%x/tfpp_%a_%A.out  # File to which STDOUT will be written
 #SBATCH -e /cluster/work/andrebw/repos/temporal_garage/results/logs/%x/tfpp_%a_%A.out  # File to which STDERR will be written
 #SBATCH --partition=GPUQ
@@ -20,13 +20,13 @@ scontrol show job $SLURM_JOB_ID
 
 echo SLURM_JOB_GPUS: $SLURM_JOB_GPUS
 export NGPUS=$(echo $SLURM_JOB_GPUS | grep -oP [0-9]+ | wc -l)
-export BATCH_SIZE=$((32 / $NGPUS))
+export BATCH_SIZE=$((8 / $NGPUS))
 echo NGPUS: $NGPUS
 echo Per-GPU batch size: $BATCH_SIZE
 
 pwd
 export PROJECT_ROOT=/cluster/work/andrebw/repos/temporal_garage
-export DATASET=garage_v2
+export DATASET=garage_v2_2025_03_15
 export CARLA_ROOT=$PROJECT_ROOT/carla
 export PYTHONPATH="${CARLA_ROOT}/PythonAPI/carla/":${PYTHONPATH}
 
@@ -44,14 +44,13 @@ torchrun --nnodes=1 --nproc_per_node=$NGPUS --max_restarts=0 --rdzv_id=$SLURM_JO
     --batch_size $BATCH_SIZE \
     --use_temporal_fusion 1 \
     --use_recurrent_training 0 \
-    --use_temporal_self_attn 1 \
-    --temporal_fusion_layers 2 \
+    --temporal_fusion_layers 1 \
     --seq_len 5 \
     --seq_step 1 \
     --lidar_seq_len 1 \
     --lidar_step_size 1 \
     --use_trajectory_prediction 1 \
-    --trajectory_loss_type huber \
+    --trajectory_loss_type l1 \
     --use_trajectory_target_speed_mask 1 \
     --trajectory_pred_len 6 \
     --trajectory_step_size 2 \

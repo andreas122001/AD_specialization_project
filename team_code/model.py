@@ -395,7 +395,7 @@ class LidarCenterNet(nn.Module):
             self.selection_loss = nn.BCEWithLogitsLoss()
 
         if self.config.use_trajectory_prediction:
-            self.trajectory_loss = MultiModalHungarianLoss()
+            self.trajectory_loss = MultiModalHungarianLoss(loss_type=self.config.trajectory_loss_type)
 
         if self.config.use_temporal_fusion and self.config.seq_len > 1:
             self.temporal_fusor = MHATemporalFusion(

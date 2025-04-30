@@ -581,6 +581,13 @@ def main():
         type=int,
         default=config.use_trajectory_prediction,
         help="use a trajectory prediction head to predict other objects trajectories",
+    )    
+    parser.add_argument(
+        "--trajectory_loss_type",
+        type=str,
+        choices=["l1", "l2", "huber"],
+        default=config.trajectory_loss_type,
+        help="which loss function to use for trajectory prediction",
     )
     parser.add_argument(
         "--use_trajectory_target_speed_mask",

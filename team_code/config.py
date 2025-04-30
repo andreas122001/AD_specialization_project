@@ -729,6 +729,7 @@ class GlobalConfig:
         self.trajectory_modes = 16  # number of trajectory modes for multimodal trajectory prediction
         self.trajectory_step_size = 2
         self.trajectory_decoder_layers = 1
+        self.trajectory_loss_type = "l2"  # Loss function for trajectory prediction task ("l1", "l2", or "huber")
         self.use_trajectory_target_speed_mask = True
         self.max_num_trajectories = 20  # similar to self.max_num_bbs, limits the number of trajectories to predict
         # Trajectory normalization values and bounds

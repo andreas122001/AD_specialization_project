@@ -5,9 +5,16 @@ from torch import nn
 from focal_loss2 import FocalLoss
 
 class MultiModalHungarianLoss(nn.Module):
-    def __init__(self):
+    def __init__(self, loss_type="huber"):
         super().__init__()
-        self.trajectory_loss = nn.L1Loss(reduction="none")
+        if loss_type == "l1":
+            self.trajectory_loss = nn.L1Loss(reduction="none")
+        elif loss_type == "l2":
+            self.trajectory_loss = nn.MSELoss(reduction="none")
+        elif loss_type == "huber":
+            self.trajectory_loss = nn.HuberLoss(reduction="none", delta=1.0)
+        else:
+            raise ValueError(f"Unknown loss type for trajectory task: {loss_type}. Use 'l1', 'l2', or 'huber'.")
         self.confidence_loss = FocalLoss(gamma=2.0, label_smoothing=0.01, reduction="mean")
 
     def forward(self, 
