@@ -2,15 +2,16 @@ import torch
 from scipy.optimize import linear_sum_assignment
 from typing import Optional
 from torch import nn
+from focal_loss2 import FocalLoss
 
 class MultiModalHungarianLoss(nn.Module):
     def __init__(self):
         super().__init__()
         self.trajectory_loss = nn.L1Loss(reduction="none")
-        self.confidence_loss = nn.CrossEntropyLoss()
+        self.confidence_loss = FocalLoss(gamma=2.0, label_smoothing=0.01, reduction="mean")
 
     def forward(self, 
-            outputs: tuple[torch.Tensor, torch.Tensor],
+            predictions: tuple[torch.Tensor, torch.Tensor],
             targets: torch.Tensor,
             mask: Optional[torch.Tensor] = None,
         ):
@@ -18,7 +19,7 @@ class MultiModalHungarianLoss(nn.Module):
         Compute the Hungarian loss for predicted 2D multimodal trajectories with batch B, number of objects N, modes K, and future timesteps T.
 
         Args:
-            outputs: tuple containing predicted trajectories and predicted confidence scores.
+            predictions: tuple containing predicted trajectories and predicted confidence scores.
                     - pred_trajectory: Tensor of shape [B, N, K, T, 2]
                     - pred_confidence: Tensor of shape [B, N, K+1] (logits for mode/background classes)
             targets: padded ground truth trajectories [B, N, T, 2].
@@ -26,7 +27,7 @@ class MultiModalHungarianLoss(nn.Module):
             mask: trajectory mask for the GT trajectories [B, N, T].
                     Useful for ignoring parts of GT trajectories if some points are missing.
         """
-        pred_trajectories, pred_confidences = outputs  # [B, N, K, T, 2], [B, N, K+1]
+        pred_trajectories, pred_confidences = predictions  # [B, N, K, T, 2], [B, N, K+1]
         batch_size, n_queries, n_modes, T, coord_dim = pred_trajectories.shape
 
         # Mask out invalid trajectory points
@@ -37,7 +38,7 @@ class MultiModalHungarianLoss(nn.Module):
 
         # Compute a per-trajectory validity flag for ground truth.
         # Here, if the sum of absolute values in a trajectory is not zero, it is considered valid.
-        # Otherwise, it is most certainly just padding.
+        # Otherwise, it is most certainly just padding or fully masked out.
         valid_indices = targets.abs().sum(dim=(2, 3)).not_equal(0)  # Shape: [B, N]
 
         # Initialize the target confidences, which will contain the reordered valid targets (after matching)
@@ -124,7 +125,7 @@ if __name__ == "__main__":
     pred_trajectory[:, 1, 1, :] = torch.tensor([1.0, 2.0]) + 0.001  # 1->0
     pred_trajectory[:, 2, 0, :] = torch.tensor([2.0, 1.0]) + 0.001  # 2->2
 
-    pred_confidence = torch.zeros(B, N, K + 1) - torch.ones(K + 1) * 10
+    pred_confidence = torch.zeros(B, N, K + 1) - torch.ones(K + 1) * 5
     #              [B,N,K]
     pred_confidence[:, 0, 0] *= -1
     pred_confidence[:, 1, 1] *= -1
