@@ -791,6 +791,8 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
                         id_to_xy[box['id']] = x, y
             all_timesteps.append(id_to_xy)
 
+        n = valid_ids.__len__()
+
         # Create a mask for valid trajectory points,
         # some actors disappear/reappear in future timesteps (bc. random bb selection), mask those points out
         mask = np.zeros((max(n, N), F))
@@ -798,7 +800,6 @@ class CARLA_Data(Dataset):  # pylint: disable=locally-disabled, invalid-name
         # For all actors (up to a limit), for all timesteps, get the position of that actor at that timestep
         # If position is found, append position and set mask to 1
         # Else, append zero and set mask to 0
-        n = valid_ids.__len__()
         xy_lim = np.array([  # mark oob as zero mask
             [self.config.trajectory_min_x, self.config.trajectory_min_y], 
             [self.config.trajectory_max_x, self.config.trajectory_max_y]
