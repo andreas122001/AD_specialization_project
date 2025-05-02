@@ -1,3 +1,9 @@
+This repository contains code from a master's thesis project which builds on the <a href="https://github.com/autonomousvision/carla_garage">carla_garage</a> repository, which repository this repository is a fork of, and the TransFuser++ autonomous driving model.
+
+This README will be updated later (latest July '25). In the meantime, below is the README from the original <a href="https://github.com/autonomousvision/carla_garage">carla_garage</a> repository.
+
+---
+
 <p align="center">
   <img src="assets/carla_garage_white.png" alt="CARLA garage" width="500"/>
   <h3 align="center">
