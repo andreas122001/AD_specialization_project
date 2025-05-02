@@ -155,7 +155,7 @@ class MHATemporalFusion(nn.Module):
         self.historic_init = nn.Parameter(torch.zeros(1, 65, 256)) if learnable_init else torch.zeros(1, 65, 256)
 
         # Set the block class based on whether self-attention is used
-        block_cls = TemporalFusionBlock if self_attn else TemporalFusionBlockNoSelfAttn
+        block_cls = TemporalFusionBlock if use_self_attn else TemporalFusionBlockNoSelfAttn
 
         # Fusion layers
         self.layers = nn.ModuleList(
