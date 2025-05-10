@@ -557,12 +557,18 @@ def main():
         type=int,
         default=config.use_temporal_fusion,
         help="use temporal fusion module",
-    ) 
+    )
     parser.add_argument(
         "--temporal_fusion_layers",
         type=int,
         default=config.temporal_fusion_layers,
         help="How many temporal fusion block layers to use",
+    ) 
+    parser.add_argument(
+        "--temporal_fusion_heads",
+        type=int,
+        default=config.temporal_fusion_heads,
+        help="How many attention head to use in the temporal module",
     ) 
     parser.add_argument(
         "--use_recurrent_training",
