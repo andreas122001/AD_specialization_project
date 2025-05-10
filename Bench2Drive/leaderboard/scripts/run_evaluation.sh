@@ -24,6 +24,18 @@ export TEAM_CONFIG=$6
 export CHECKPOINT_ENDPOINT=$7
 export SAVE_PATH=$8
 
+# FREE_WORLD_PORT=$(comm -23 <(seq $PORT $(($PORT+1)) | sort) <(ss -Htan | awk '{{print $4}}' | cut -d':' -f2 | sort -u) | shuf | head -n 1)
+
+# server="$CARLA_SERVER -RenderOffScreen -nosound -carla-rpc-port=$FREE_WORLD_PORT -graphicsadapter=$GPU_RANK"
+# echo "Starting CARLA server..."
+# bash $server &
+
+# sleep 30 # wait for CARLA to start
+
+echo "CUDA_VISIBLE_DEVICES: $CUDA_VISIBLE_DEVICES"
 echo -e "CUDA_VISIBLE_DEVICES=${GPU_RANK} python ${LEADERBOARD_ROOT}/leaderboard/leaderboard_evaluator.py --routes=${ROUTES} --repetitions=${REPETITIONS} --track=${CHALLENGE_TRACK_CODENAME} --checkpoint=${CHECKPOINT_ENDPOINT} --agent=${TEAM_AGENT} --agent-config=${TEAM_CONFIG} --debug=${DEBUG_CHALLENGE} --record=${RECORD_PATH} --resume=${RESUME} --port=${PORT} --traffic-manager-port=${TM_PORT} --gpu-rank=${GPU_RANK}"
 
-CUDA_VISIBLE_DEVICES=${GPU_RANK} python "${LEADERBOARD_ROOT}"/leaderboard/leaderboard_evaluator.py --routes="${ROUTES}" --repetitions=${REPETITIONS} --track=${CHALLENGE_TRACK_CODENAME} --checkpoint="${CHECKPOINT_ENDPOINT}" --agent="${TEAM_AGENT}" --agent-config="${TEAM_CONFIG}" --debug=${DEBUG_CHALLENGE} --record="${RECORD_PATH}" --resume=${RESUME} --port="${PORT}" --traffic-manager-port="${TM_PORT}" --gpu-rank="${GPU_RANK}" \
+echo "Cuda available?" $(python -c "import torch; print(torch.cuda.is_available())")
+
+CUDA_VISIBLE_DEVICES=${GPU_RANK} \
+python -u "${LEADERBOARD_ROOT}"/leaderboard/leaderboard_evaluator.py --routes="${ROUTES}" --repetitions=${REPETITIONS} --track=${CHALLENGE_TRACK_CODENAME} --checkpoint="${CHECKPOINT_ENDPOINT}" --agent="${TEAM_AGENT}" --agent-config="${TEAM_CONFIG}" --debug=${DEBUG_CHALLENGE} --record="${RECORD_PATH}" --resume=${RESUME} --port="${PORT}" --traffic-manager-port="${TM_PORT}" --gpu-rank="${GPU_RANK}" --timeout=90 \

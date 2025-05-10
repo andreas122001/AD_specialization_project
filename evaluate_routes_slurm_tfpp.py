@@ -30,6 +30,7 @@ def create_run_eval_bash(
     carla_root,
     seed,
     team_code,
+    is_bench2drive=False,
 ):
     Path(f"{results_save_dir}").mkdir(parents=True, exist_ok=True)
     with open(f"{bash_save_dir}/eval_{route}.sh", "w", encoding="utf-8") as rsh:
@@ -38,8 +39,8 @@ def create_run_eval_bash(
 export CARLA_ROOT={carla_root}
 export CARLA_SERVER=${{CARLA_ROOT}}/CarlaUE4.sh
 export PYTHONPATH=$PYTHONPATH:${{CARLA_ROOT}}/PythonAPI/carla
-export SCENARIO_RUNNER_ROOT=scenario_runner
-export LEADERBOARD_ROOT=leaderboard
+export SCENARIO_RUNNER_ROOT={'Bench2Drive/' if is_bench2drive else ''}scenario_runner
+export LEADERBOARD_ROOT={'Bench2Drive/' if is_bench2drive else ''}leaderboard
 export PYTHONPATH="${{SCENARIO_RUNNER_ROOT}}":"${{LEADERBOARD_ROOT}}":${{PYTHONPATH}}
 """
         )
@@ -70,6 +71,7 @@ export SLOWER=0
 export UNCERTAINTY_WEIGHT=1
 export STOP_AFTER_METER=-1
 export SAVE_PATH={logs_save_dir}
+export IS_BENCH2DRIVE={int(is_bench2drive)}
 
 module purge
 module load Anaconda3/2024.02-1
@@ -80,7 +82,7 @@ conda activate lb2
         )
         rsh.write(
             """
-python3 -u ${LEADERBOARD_ROOT}/leaderboard/leaderboard_evaluator_local.py \
+python3 -u ${LEADERBOARD_ROOT}/leaderboard/leaderboard_evaluator.py \
 --routes=${ROUTES} \
 --repetitions=${REPETITIONS} \
 --track=${CHALLENGE_TRACK_CODENAME} \
@@ -156,10 +158,10 @@ def main():
     parser.add_argument(
         "--benchmark",
         type=str,
-        default="routes_validation",
-        choices=["longest6", "routes_validation"],
+        default="bench2drive",
+        choices=["longest6", "routes_validation", "bench2drive"],
         help="Route files need to be stored in {benchmark}_split folder"
-        "Options: , longest6, routes_validation",
+        "Options: , longest6, routes_validation, bench2drive",
     )
     parser.add_argument(
         "--experiment",
@@ -170,7 +172,7 @@ def main():
     parser.add_argument(
         "--model_dir",
         type=str,
-        default="/cluster/work/andrebw/repos/temporal_garage/results/training/stage2",
+        default="/cluster/work/andrebw/repos/temporal_garage/results/training/v1",
         help="Folder containing all the experiment folders.",
     )
     parser.add_argument(
@@ -235,6 +237,8 @@ def main():
     # route_path = f"data/town13_selection/"
     # route_path = f"data/50x36_Town13/ConstructionObstacleTwoWays/"
     route_root = f"data/collection/"
+    route_root = f"leaderboard/data/bench2drive_split"
+    # route_root = f"data/selection/"
     route_pattern = "*.xml"
     route_files = glob.glob(f"{route_root}/**/{route_pattern}", recursive=True)
 
@@ -290,7 +294,7 @@ def main():
         for idx, exp_name in enumerate(exp_names):
             for route_path in route_files:
 
-                scenario = route_path.split("/")[-2]
+                scenario = route_path.split("/")[-2] if benchmark != "bench2drive" else route_path.split("/")[-1]
                 route = Path(route_path).stem
 
                 bash_save_dir = Path(
@@ -337,6 +341,7 @@ def main():
                     carla_root=carla_root,
                     seed=seeds[idx],
                     team_code=args.team_code,
+                    is_bench2drive=benchmark == "bench2drive",
                 )
                 commands.append(f"chmod u+x {bash_save_dir}/eval_{route}.sh")
                 commands.append(f"./{bash_save_dir}/eval_{route}.sh $FREE_WORLD_PORT")

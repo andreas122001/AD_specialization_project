@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --account=share-ie-idi
-#SBATCH --job-name=demo/l1-focal-s5-l1
+#SBATCH --job-name=demo/new-huber-focal-s5-dec(4)-fus(1)
 #SBATCH --ntasks=1
 #SBATCH --nodes=1
 #SBATCH --time=0-05:00:00
@@ -33,7 +33,7 @@ export PYTHONPATH="${CARLA_ROOT}/PythonAPI/carla/":${PYTHONPATH}
 # Architectures:
 # resnet34, regnety_032, video_resnet18, video_swin_tiny
 
-export OMP_NUM_THREADS=16  # Limits pytorch to spawn at most num cpus cores threads
+export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK  # Limits pytorch to spawn at most num cpus cores threads
 export OPENBLAS_NUM_THREADS=1  # Shuts off numpy multithreading, to avoid threads spawning other threads.
 torchrun --nnodes=1 --nproc_per_node=$NGPUS --max_restarts=0 --rdzv_id=$SLURM_JOB_ID --rdzv_backend=c10d \
     train.py --id $SLURM_JOB_NAME \
@@ -50,8 +50,8 @@ torchrun --nnodes=1 --nproc_per_node=$NGPUS --max_restarts=0 --rdzv_id=$SLURM_JO
     --lidar_seq_len 1 \
     --lidar_step_size 1 \
     --use_trajectory_prediction 1 \
-    --trajectory_decoder_layers 1 \
-    --trajectory_loss_type l1 \
+    --trajectory_decoder_layers 4 \
+    --trajectory_loss_type huber \
     --use_trajectory_target_speed_mask 1 \
     --trajectory_pred_len 6 \
     --trajectory_step_size 2 \

@@ -1,16 +1,16 @@
 #!/bin/bash
 #SBATCH --account=share-ie-idi
-#SBATCH --job-name=v1/static-LB5s1-L2
+#SBATCH --job-name=v1/static-LB5s1-L2-nomask
 #SBATCH --ntasks=1
 #SBATCH --nodes=1
 #SBATCH --time=5-00:00:00
-#SBATCH --gres=gpu:4
+#SBATCH --gres=gpu:2
 #SBATCH --mem=32gb
 #SBATCH --cpus-per-task=16
 #SBATCH -o /cluster/work/andrebw/repos/temporal_garage/results/logs/%x/tfpp_%a_%A.out  # File to which STDOUT will be written
 #SBATCH -e /cluster/work/andrebw/repos/temporal_garage/results/logs/%x/tfpp_%a_%A.out  # File to which STDERR will be written
 #SBATCH --partition=GPUQ
-# #SBATCH --constraint=(a100|h100)
+#SBATCH --constraint=(a100|h100)
 # #SBATCH --nodelist=idun-01-[01-06],idun-06-[01-07],idun-07-[08-10],idun-08-01
 
 # IMPORTANT: Start this script from within team_code folder, otherwise it will not work
@@ -33,7 +33,7 @@ export PYTHONPATH="${CARLA_ROOT}/PythonAPI/carla/":${PYTHONPATH}
 # Architectures:
 # resnet34, regnety_032, video_resnet18, video_swin_tiny
 
-export OMP_NUM_THREADS=16  # Limits pytorch to spawn at most num cpus cores threads
+export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK  # Limits pytorch to spawn at most num cpus cores threads
 export OPENBLAS_NUM_THREADS=1  # Shuts off numpy multithreading, to avoid threads spawning other threads.
 torchrun --nnodes=1 --nproc_per_node=$NGPUS --max_restarts=0 --rdzv_id=$SLURM_JOB_ID --rdzv_backend=c10d \
     train.py --id $SLURM_JOB_NAME \
@@ -46,6 +46,7 @@ torchrun --nnodes=1 --nproc_per_node=$NGPUS --max_restarts=0 --rdzv_id=$SLURM_JO
     --use_recurrent_training 0 \
     --use_temporal_self_attn 1 \
     --temporal_fusion_layers 2 \
+    --temporal_fusion_heads 4 \
     --seq_len 5 \
     --seq_step 1 \
     --lidar_seq_len 1 \
@@ -53,7 +54,7 @@ torchrun --nnodes=1 --nproc_per_node=$NGPUS --max_restarts=0 --rdzv_id=$SLURM_JO
     --use_trajectory_prediction 1 \
     --trajectory_decoder_layers 1 \
     --trajectory_loss_type huber \
-    --use_trajectory_target_speed_mask 1 \
+    --use_trajectory_target_speed_mask 0 \
     --trajectory_pred_len 6 \
     --trajectory_step_size 2 \
     --trajectory_modes 16 \
@@ -76,3 +77,5 @@ torchrun --nnodes=1 --nproc_per_node=$NGPUS --max_restarts=0 --rdzv_id=$SLURM_JO
     --image_architecture regnety_032 \
     --lidar_architecture regnety_032 \
     --load_file $PROJECT_ROOT/results/training/tfpp_base/model_0030.pth
+    # --load_file $PROJECT_ROOT/results/training/v1/stg1-lidar-LB2s1/model_0030.pth
+    # --load_file $PROJECT_ROOT/results/training/v1/stg1-lidar-LB5s1/model_0030.pth

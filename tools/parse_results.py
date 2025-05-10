@@ -8,6 +8,7 @@ import ujson
 # root = "/cluster/work/andrebw/repos/temporal_garage/evaluation/tfpp_s2s1_old_routes_validation_model_0030/tfpp_s2s1_old_routes_validation_e0_model_0030/results"
 #root = "/cluster/work/andrebw/repos/temporal_garage/evaluation/tfpp_static_s5s2_routes_validation_model_0030/tfpp_static_s5s2_routes_validation_e0_model_0030/results"
 root = "/cluster/work/andrebw/repos/temporal_garage/evaluation/routes_validation/tfpp_default_e30/rep0/results"
+root = "/cluster/work/andrebw/repos/temporal_garage/evaluation/routes_validation/static-LB2s1-L2_e30/static-LB2s1-L2_r0/results/"
 #root = "/cluster/work/andrebw/repos/temporal_garage/evaluation/routes_validation/tfpp_default_e30/rep0/results"
 
 result_files = glob.glob(f"{root}/**/*.json", recursive=True)
@@ -106,7 +107,7 @@ print(f"Success: {success} / {success + failed}")
 print()
 
 from pathlib import Path
-save_path = "/".join(root.split("/")[:-1]) + "/results2.json"
+save_path = "/".join(root.split("/")[:-1]) + "/results.json"
 print(Path(save_path))
 with open(save_path, "w") as f:
     ujson.dump(results, f, indent=4)
