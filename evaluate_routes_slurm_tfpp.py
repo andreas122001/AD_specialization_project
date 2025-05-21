@@ -31,6 +31,7 @@ def create_run_eval_bash(
     seed,
     team_code,
     is_bench2drive=False,
+    resume=1,
 ):
     Path(f"{results_save_dir}").mkdir(parents=True, exist_ok=True)
     with open(f"{bash_save_dir}/eval_{route}.sh", "w", encoding="utf-8") as rsh:
@@ -55,7 +56,7 @@ export TEAM_AGENT={team_code}/sensor_agent.py
 export TEAM_CONFIG={team_code}/checkpoints/{checkpoint}/
 export CHALLENGE_TRACK_CODENAME=SENSORS
 export REPETITIONS=1
-export RESUME=1
+export RESUME={int(resume)}
 export SEED={seed}
 export CHECKPOINT_ENDPOINT={results_save_dir}/{route}.json
 export DEBUG_ENV_AGENT=0
@@ -72,6 +73,7 @@ export UNCERTAINTY_WEIGHT=1
 export STOP_AFTER_METER=-1
 export SAVE_PATH={logs_save_dir}
 export IS_BENCH2DRIVE={int(is_bench2drive)}
+export WORK_DIR=Bench2Drive
 
 module purge
 module load Anaconda3/2024.02-1
@@ -94,13 +96,13 @@ python3 -u ${LEADERBOARD_ROOT}/leaderboard/leaderboard_evaluator.py \
 --record=${RECORD_PATH} \
 --resume=${RESUME} \
 --port=${PORT} \
---timeout=300 \
+--timeout=120 \
 --traffic-manager-port=${TM_PORT}
 """
         )
 
 
-def make_jobsub_file(commands, job_number, exp_name, exp_root_name, partition):
+def make_jobsub_file(commands, job_number, exp_name, exp_root_name, partition, is_bench2drive=False):
     os.makedirs(f"evaluation/{exp_root_name}/slurm/logs", exist_ok=True)
     os.makedirs(
         f"evaluation/{exp_root_name}/slurm/job_files", exist_ok=True
@@ -116,11 +118,11 @@ def make_jobsub_file(commands, job_number, exp_name, exp_root_name, partition):
 #SBATCH -e evaluation/{exp_root_name}/slurm/logs/qsub_out{job_number}.log
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=4
+#SBATCH --cpus-per-task=2
 #SBATCH --mem=20gb
-#SBATCH --time=00-02:00:00
+#SBATCH --time={'00-00:25:00' if is_bench2drive else '00-01:00:00'}
 #SBATCH --gres=gpu:1
-#SBATCH --constraint=(a100|h100|v100|p100)
+#SBATCH --constraint=(v100|p100)
 """
 # V100s and P100s seems to be enough
     for cmd in commands:
@@ -172,7 +174,7 @@ def main():
     parser.add_argument(
         "--model_dir",
         type=str,
-        default="/cluster/work/andrebw/repos/temporal_garage/results/training/v1",
+        default="/cluster/work/andrebw/repos/temporal_garage/results/training/v2",
         help="Folder containing all the experiment folders.",
     )
     parser.add_argument(
@@ -215,6 +217,12 @@ def main():
         default=1,
         help="How often to repeat the same routes.",
     )
+    parser.add_argument(
+        "--resume",
+        type=int,
+        default=1,
+        help="Resume and skip completed runs.",
+    )
 
     args, unknown = parser.parse_known_args()
 
@@ -227,19 +235,23 @@ def main():
     carla_root = args.carla_root
     partition = args.partition
     username = args.username
+    resume = args.resume
     experiment_name_stem = f"{experiment}"
     exp_names_tmp = []
     seeds = []
     for i in range(num_repetitions):
         exp_names_tmp.append(f"{experiment_name_stem}_r{i}")
         seeds.append(i)
+    # Specify the route root path
     # route_path = f'leaderboard/data/{benchmark}_split/'
     # route_path = f"data/town13_selection/"
     # route_path = f"data/50x36_Town13/ConstructionObstacleTwoWays/"
-    route_root = f"data/collection/"
+    # route_path = f"data/50x36_Town13/"
+    # route_root = f"data/collection/"
     route_root = f"leaderboard/data/bench2drive_split"
     # route_root = f"data/selection/"
     route_pattern = "*.xml"
+    failed_is_fine = True  # True means skip failed routes upon resuming (only for resume=1), if False, rerun failed routes also
     route_files = glob.glob(f"{route_root}/**/{route_pattern}", recursive=True)
 
     carla_world_port_start = 10000
@@ -276,7 +288,9 @@ def main():
             print(cmd)
             os.system(cmd)
 
-        for exp_name in exp_names:
+        meta_jobs = {}
+
+        for idx, exp_name in enumerate(exp_names):
             bash_save_dir = Path(
                 f"evaluation/{experiment_name_root}/{exp_name}/run_bashs"
             )
@@ -288,14 +302,47 @@ def main():
             bash_save_dir.mkdir(parents=True, exist_ok=True)
             results_save_dir.mkdir(parents=True, exist_ok=True)
             logs_save_dir.mkdir(parents=True, exist_ok=True)
-
-        meta_jobs = {}
-
-        for idx, exp_name in enumerate(exp_names):
+        
             for route_path in route_files:
 
-                scenario = route_path.split("/")[-2] if benchmark != "bench2drive" else route_path.split("/")[-1]
+                scenario = route_path.split("/")[-2] if benchmark != "bench2drive" else "bench2drive_split"
                 route = Path(route_path).stem
+                
+                # Skip routes that are already completed, rerun the ones which failed
+                if resume == 1:
+
+                    # Check if there is a slurm job running for this route
+                    job_name = f"{experiment_name_stem}{job_nr}"
+                    job_running = (
+                        subprocess.check_output(
+                            f"squeue -h --me --format='%j' | grep {job_name} | wc -l", shell=True
+                        )
+                        .decode("utf-8")
+                        .strip()
+                    )
+                    job_exists = int(job_running) > 0
+
+                    # Check if the route has already been evaluated
+                    route = Path(route_path).stem
+                    result_file = f"{results_save_dir}/{scenario}/{route}.json"
+                    results_exists = False
+                    if os.path.exists(result_file):
+                        with open(result_file, "r", encoding="utf-8") as f_result:
+                            try:
+                                evaluation_data = ujson.load(f_result)
+                                progress = evaluation_data["_checkpoint"]["global_record"].get("status", None)
+                                if progress == "Completed" or (failed_is_fine and progress is not None):
+                                    results_exists = True
+                            except Exception as e:
+                                print(f"Failed to open {evaluation_data}: {e}")
+
+                    if job_exists or results_exists:
+                        if job_exists:
+                            print(f"Job {job_name} of route {route} is already running ({job_nr}/{len(route_files) * num_repetitions}). Skipping...")
+                        if results_exists:
+                            print(f"Route {route} already evaluated ({job_nr}/{len(route_files) * num_repetitions}). Skipping...")
+                        job_nr += 1
+                        continue
 
                 bash_save_dir = Path(
                     f"evaluation/{experiment_name_root}/{exp_name}/run_bashs"
@@ -323,13 +370,14 @@ def main():
                 )
                 commands.append("echo 'Streaming Port:' $FREE_STREAMING_PORT")
                 # NOTE remove -nullrhi if you want to use sensors / rendering.
-                commands.append(
-                    f"{carla_root}/CarlaUE4.sh -carla-rpc-port=${{FREE_WORLD_PORT}} -nosound -RenderOffScreen "
-                    f"-carla-primary-port=0 -graphicsadapter=0 -carla-streaming-port=${{FREE_STREAMING_PORT}} &"
-                )
-                commands.append(
-                    f"sleep {CARLA_WAIT_TIME}"
-                )  # Waits for CARLA to finish starting
+                if not benchmark == "bench2drive":
+                    commands.append(
+                        f"{carla_root}/CarlaUE4.sh -carla-rpc-port=${{FREE_WORLD_PORT}} -nosound -RenderOffScreen "
+                        f"-carla-primary-port=0 -graphicsadapter=0 -carla-streaming-port=${{FREE_STREAMING_PORT}} &"
+                    )
+                    commands.append(
+                        f"sleep {CARLA_WAIT_TIME}"
+                    )  # Waits for CARLA to finish starting
                 create_run_eval_bash(
                     bash_save_dir,
                     results_save_dir,
@@ -341,7 +389,8 @@ def main():
                     carla_root=carla_root,
                     seed=seeds[idx],
                     team_code=args.team_code,
-                    is_bench2drive=benchmark == "bench2drive",
+                    is_bench2drive=(benchmark == "bench2drive"),
+                    resume=resume,
                 )
                 commands.append(f"chmod u+x {bash_save_dir}/eval_{route}.sh")
                 commands.append(f"./{bash_save_dir}/eval_{route}.sh $FREE_WORLD_PORT")
@@ -357,6 +406,7 @@ def main():
                     exp_name=experiment_name_stem,
                     exp_root_name=experiment_name_root,
                     partition=partition,
+                    is_bench2drive=(benchmark == "bench2drive"),
                 )
                 result_file = f"{results_save_dir}/{route}.json"
 
@@ -372,7 +422,7 @@ def main():
                     time.sleep(2)
                 time.sleep(0.05)
                 print(
-                    f"Submitting job {job_nr}/{len(route_files) * num_repetitions}: {job_file}"
+                    f"Submitting job {job_nr}/{len(route_files) * num_repetitions} ({scenario}/{route}): {job_file}"
                 )
                 jobid = (
                     subprocess.check_output(f"sbatch {job_file}", shell=True)
