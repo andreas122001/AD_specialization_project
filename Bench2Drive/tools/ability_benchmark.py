@@ -8,6 +8,7 @@ import atexit
 import subprocess
 import time
 import random
+from tqdm import tqdm
 
 Ability = {
     "Overtaking":['Accident', 'AccidentTwoWays', 'ConstructionObstacle', 'ConstructionObstacleTwoWays', 'HazardAtSideLaneTwoWays', 'HazardAtSideLane', 'ParkedObstacleTwoWays', 'ParkedObstacle', 'VehicleOpensDoorTwoWays'],
@@ -97,7 +98,7 @@ def main(args):
     world = client.load_world(current_town)
     carla_map = world.get_map()
     grp = GlobalRoutePlanner(carla_map, 1.0)
-    for route in sorted_routes:
+    for route in tqdm(sorted_routes):
         scenarios = route.find('scenarios')
         scenario_name = scenarios.find('scenario').get("type")
         route_id = route.get('id')
@@ -173,11 +174,11 @@ def main(args):
     print('Finished!')
 
 if __name__=='__main__':
-    argparser = argparse.ArgumentParser(description=__doc__)
+    argparser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     argparser.add_argument('-f', '--file', nargs=None, default="leaderboard/data/bench2drive220.xml", help='route file')
     argparser.add_argument('-r', '--result_file', nargs=None, default="", help='result json file')
-    argparser.add_argument('-t', '--host', default='localhost', help='IP of the host server (default: localhost)')
-    argparser.add_argument('-p', '--port', nargs=1, default=4000, help='carla rpc port')
+    argparser.add_argument('-t', '--host', default='localhost', help='IP of the host server')
+    argparser.add_argument('-p', '--port', type=int, default=8512, help='carla rpc port')
     args = argparser.parse_args()
     main(args)
     
