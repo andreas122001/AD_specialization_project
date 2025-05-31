@@ -1546,25 +1546,39 @@ class LidarCenterNet(nn.Module):
             mins, _ = cross_weights.min(dim=0)
             means = cross_weights.mean(dim=0)
 
-            f = plt.figure(figsize=(1, 8))
-            plt.axis('off')
+            f = plt.figure(figsize=(2, 9))
             plt.xlim(0,0.5)
+            plt.grid(True)
+            plt.yticks(range(0, 65, 4), labels=[f"{i}" for i in range(1, 66, 4)], fontsize=8)
+            plt.xticks(fontsize=8)
+            plt.grid(True, linestyle=':', linewidth=0.5)
+            plt.axhline(63.5, color='red', linestyle='--', linewidth=0.5) # separate spatial vs ego token
 
             for i, (min_, max_, mean) in enumerate(zip(mins, maxes, means)):
-                err = np.array([min_.unsqueeze(-1), max_.unsqueeze(-1)])
-                x = mean.unsqueeze(-1).numpy()
+                x = mean.item()
+                err = np.array([[x - min_.item()], [max_.item() - x]])
                 plt.errorbar(
                     x=x,
                     y=i,
                     xerr=err,
                     fmt='o',
-                    capsize=2,
-                    label="Cross Weight",
-                    markersize=5,
+                    capsize=3,
+                    label="Spatial" if i == 0 else "Ego" if i==64 else None,
+                    markersize=4,
+                    color='tab:green' if i < 64 else 'tab:red',
                     alpha=1.0,
                 )
 
+            plt.title("Past attn.", fontsize=10)
+            plt.legend(
+                loc='lower center',
+                bbox_to_anchor=(0.48, -0.002),  # center above the plot
+                ncol=2,
+                fontsize=9,
+                frameon=True
+            )
             plt.tight_layout()
+
             f.canvas.draw()
             img_plot = np.array(f.canvas.renderer.buffer_rgba())[:,:,:3]
             images_lidar[-img_plot.shape[0]-1:-1, -img_plot.shape[1]-1:-1, :] = img_plot
