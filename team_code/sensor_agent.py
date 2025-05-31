@@ -35,6 +35,7 @@ import jsonpickle
 import jsonpickle.ext.numpy as jsonpickle_numpy
 import ujson  # Like json but faster
 import gzip
+import time
 
 jsonpickle_numpy.register_handlers()
 jsonpickle.set_encoder_options("json", sort_keys=True, indent=4)
@@ -249,6 +250,10 @@ class SensorAgent(autonomous_agent.AutonomousAgent):
         self.spatiotemporal_feature_buffer = deque(maxlen=see_every)
         # Prefill with Nones
         [self.spatiotemporal_feature_buffer.append(None) for _ in range(see_every)]
+        print("Feature buffer size: ", len(self.spatiotemporal_feature_buffer))
+
+        self.elapsed_time = 0.0
+        self.counted_timesteps = 0
 
 
     def _init(self):
@@ -511,6 +516,7 @@ class SensorAgent(autonomous_agent.AutonomousAgent):
     def run_step(
         self, input_data, timestamp, sensors=None
     ):  # pylint: disable=locally-disabled, unused-argument
+        time0 = time.perf_counter()
         self.step += 1
 
         if not self.initialized:
@@ -895,6 +901,12 @@ class SensorAgent(autonomous_agent.AutonomousAgent):
         else:
             self.control = control
 
+        time1 = time.perf_counter()
+        elapsed = time1 - time0
+        if self.step > 9:
+            self.elapsed_time += elapsed
+            self.counted_timesteps += 1
+            print(f"{self.step} Step time: {elapsed*1000:.1f} ms (avg: {1000*self.elapsed_time / self.counted_timesteps:1f} ms, tot: {self.elapsed_time:.1f} s)", end=" ")
         return control
 
     def stop_sign_controller_step(self, ego_speed):
