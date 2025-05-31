@@ -31,6 +31,7 @@ def create_run_eval_bash(
     seed,
     team_code,
     is_bench2drive=False,
+    do_debug=False,
     resume=1,
 ):
     Path(f"{results_save_dir}").mkdir(parents=True, exist_ok=True)
@@ -43,6 +44,7 @@ export PYTHONPATH=$PYTHONPATH:${{CARLA_ROOT}}/PythonAPI/carla
 export SCENARIO_RUNNER_ROOT={'Bench2Drive/' if is_bench2drive else ''}scenario_runner
 export LEADERBOARD_ROOT={'Bench2Drive/' if is_bench2drive else ''}leaderboard
 export PYTHONPATH="${{SCENARIO_RUNNER_ROOT}}":"${{LEADERBOARD_ROOT}}":${{PYTHONPATH}}
+export LEADERBOARD_SCRIPT={'leaderboard_evaluator.py' if is_bench2drive else 'leaderboard_evaluator_local.py'}
 """
         )
         rsh.write(
@@ -60,7 +62,7 @@ export RESUME={int(resume)}
 export SEED={seed}
 export CHECKPOINT_ENDPOINT={results_save_dir}/{route}.json
 export DEBUG_ENV_AGENT=0
-export DEBUG_CHALLENGE=0
+export DEBUG_CHALLENGE={int(do_debug)}
 export RECORD=1
 export DIRECT=1
 export COMPILE=0
@@ -79,12 +81,14 @@ module purge
 module load Anaconda3/2024.02-1
 module load libjpeg-turbo/2.1.5.1-GCCcore-12.3.0
 
+nvidia-smi
+
 conda activate lb2
 """
         )
         rsh.write(
             """
-python3 -u ${LEADERBOARD_ROOT}/leaderboard/leaderboard_evaluator.py \
+python3 -u ${LEADERBOARD_ROOT}/leaderboard/${LEADERBOARD_SCRIPT} \
 --routes=${ROUTES} \
 --repetitions=${REPETITIONS} \
 --track=${CHALLENGE_TRACK_CODENAME} \
@@ -122,7 +126,7 @@ def make_jobsub_file(commands, job_number, exp_name, exp_root_name, partition, i
 #SBATCH --mem=20gb
 #SBATCH --time={'00-00:25:00' if is_bench2drive else '00-01:00:00'}
 #SBATCH --gres=gpu:1
-#SBATCH --constraint=(v100|p100)
+#SBATCH --constraint=(v100|p100|h100)
 """
 # V100s and P100s seems to be enough
     for cmd in commands:
@@ -161,14 +165,14 @@ def main():
         "--benchmark",
         type=str,
         default="bench2drive",
-        choices=["longest6", "routes_validation", "bench2drive"],
+        choices=["longest6", "routes_validation", "bench2drive", "dummy"],
         help="Route files need to be stored in {benchmark}_split folder"
-        "Options: , longest6, routes_validation, bench2drive",
+        "Options: dummy, longest6, routes_validation, bench2drive",
     )
     parser.add_argument(
         "--experiment",
         type=str,
-        default="tfpp_default",
+        required=True,
         help="Name of folder where the model files are stored in e.g. tfpp_020_0",
     )
     parser.add_argument(
@@ -247,11 +251,18 @@ def main():
     # route_path = f"data/town13_selection/"
     # route_path = f"data/50x36_Town13/ConstructionObstacleTwoWays/"
     # route_path = f"data/50x36_Town13/"
-    # route_root = f"data/collection/"
-    route_root = f"leaderboard/data/bench2drive_split"
+    if benchmark == "bench2drive":
+        route_root = f"leaderboard/data/bench2drive_split"
+    elif benchmark == "routes_validation":
+        route_root = f"data/collection/"
+    elif benchmark == "dummy":
+        route_root = f"data/selection/"
+    else:
+        raise ValueError(f"Benchmark '{benchmark}' not supported")
+    # route_root = f"leaderboard/data/bench2drive_split"
     # route_root = f"data/selection/"
     route_pattern = "*.xml"
-    failed_is_fine = True  # True means skip failed routes upon resuming (only for resume=1), if False, rerun failed routes also
+    failed_is_fine = False  # True means skip failed routes upon resuming (only for resume=1), if False, rerun failed routes also
     route_files = glob.glob(f"{route_root}/**/{route_pattern}", recursive=True)
 
     carla_world_port_start = 10000
@@ -390,6 +401,7 @@ def main():
                     seed=seeds[idx],
                     team_code=args.team_code,
                     is_bench2drive=(benchmark == "bench2drive"),
+                    do_debug=(benchmark == "dummy"),
                     resume=resume,
                 )
                 commands.append(f"chmod u+x {bash_save_dir}/eval_{route}.sh")
