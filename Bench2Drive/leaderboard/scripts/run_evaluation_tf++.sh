@@ -1,16 +1,16 @@
 #!/bin/bash
-#SBATCH --job-name=b2d/static-LB5s1-L2
+#SBATCH --job-name=b2d/tfpp_default
 #SBATCH --account=share-ie-idi
 #SBATCH --ntasks=1
 #SBATCH --nodes=1
-#SBATCH --time=0-1:00:00
-#SBATCH --gres=gpu:1
+#SBATCH --time=0-02:30:00
+#SBATCH --gres=gpu:2
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=32gb
 #SBATCH --output=/cluster/work/andrebw/repos/temporal_garage/evaluation/bench2drive/logs/b2d_009_%a_%A.out  # File to which STDOUT will be written
 #SBATCH --error=/cluster/work/andrebw/repos/temporal_garage/evaluation/bench2drive/logs/b2d_009_%a_%A.out   # File to which STDERR will be written
 #SBATCH --partition=GPUQ
-#SBATCH --constraint=(v100|p100|h100|a100)
+#SBATCH --constraint=(v100|p100)
 
 export CARLA_ROOT=/cluster/work/andrebw/repos/temporal_garage/carla
 export WORK_DIR=/cluster/work/andrebw/repos/temporal_garage/Bench2Drive
@@ -25,7 +25,7 @@ export CKPT=$MODEL"_model_0030"
 export NGPUS=$(echo $SLURM_JOB_GPUS | grep -oP [0-9]+ | wc -l)
 echo Num GPUS: $NGPUS
 gpu_list=(${SLURM_JOB_GPUS//,/ })
-TASK_NUM=$((2*$NGPUS))
+TASK_NUM=8 # $((2*$NGPUS))
 echo GPU_LIST: $(echo $SLURM_JOB_GPUS | sed -e "s/,/ /g")
 echo MODEL=$MODEL
 
@@ -63,8 +63,8 @@ echo -e "**************\033[36m Please Manually adjust GPU or TASK_ID \033[0m **
 # Example, 8*H100, 1 task per gpu
 # IFS=',' read -ra GPU_RANK_LIST <<< "$SLURM_JOB_GPUS"
 # TASK_LIST=( $(seq 0 $(($TASK_NUM-1))) )
-GPU_RANK_LIST=( 0 )
-TASK_LIST=( 2 )
+GPU_RANK_LIST=( 0 0 1 1 )
+TASK_LIST=( 0 1 2 3 )
 echo -e "\033[32m GPU_RANK_LIST: ${GPU_RANK_LIST[*]} \033[0m"
 echo -e "\033[32m TASK_LIST: ${TASK_LIST[*]} \033[0m"
 echo -e "***********************************************************************************"

@@ -244,28 +244,38 @@ class ScenarioManager(object):
         """
         This function triggers a proper termination of a scenario
         """
+        print("=== THE OTHER ONE? ===")
+        print("1) Stopping -watchdog...")
         if self._watchdog:
             self._watchdog.stop()
 
+        print("2) Stopping _agent_watchdog...")
         if self._agent_watchdog:
             self._agent_watchdog.stop()
 
+        print("3) Compute duration time...")
         self.compute_duration_time()
 
+        print("4) Get running status...")
         if self.get_running_status():
+            print("5) Terminate scenario...")
             if self.scenario is not None:
                 self.scenario.terminate()
 
+            print("6) Cleanup agent wrapper...")
             if self._agent_wrapper is not None:
                 self._agent_wrapper.cleanup()
                 self._agent_wrapper = None
 
+            print("7) Analyse scenario...")
             self.analyze_scenario()
 
         # Make sure the scenario thread finishes to avoid blocks
+        print("8) Wait for threads...")
         self._running = False
         self._scenario_thread.join()
         self._scenario_thread = None
+        print("9) Done?")
 
     def compute_duration_time(self):
         """

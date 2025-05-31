@@ -2,9 +2,9 @@ cd /cluster/work/andrebw/repos/temporal_garage/Bench2Drive
 
 clean_carla="/cluster/work/andrebw/repos/temporal_garage/Bench2Drive/tools/clean_carla.sh"
 
+
 FOLDERS=(
-    /cluster/work/andrebw/repos/temporal_garage/evaluation/bench2drive/LB5s1_e30/LB5s1_r[0-9]/results/bench2drive_split
-    /cluster/work/andrebw/repos/temporal_garage/evaluation/bench2drive/static-LB9s[0-9]_e30/static-LB9s[0-9]_r[0-9]/results/bench2drive_split
+    /cluster/work/andrebw/repos/temporal_garage/evaluation/bench2drive/static-LB5s[0-9]_e30/static-LB5s[0-9]_r[0-9]/results/bench2drive_split
 )
 
 i=0
