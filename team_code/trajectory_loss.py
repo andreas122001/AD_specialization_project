@@ -21,7 +21,7 @@ class MultiModalHungarianLoss(nn.Module):
                 f"Unknown loss type for trajectory task: {loss_type}. Use 'l1', 'l2', or 'huber'."
             )
         self.confidence_loss = FocalLoss(
-            gamma=2.0, label_smoothing=0.01, reduction="mean"
+            gamma=2.0, reduction="mean"
         )
 
     def forward(
