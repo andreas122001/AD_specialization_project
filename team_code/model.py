@@ -1465,7 +1465,7 @@ class LidarCenterNet(nn.Module):
                 trajectory = trajectory * np.array([1,-1]) + np.array([0, 255])  # fit to image
                 trajectory = trajectory * scale_factor
                 for j, (x, y) in enumerate(trajectory):
-                    color = (j+j*12, j*18, 100 + (j*18))
+                    color = (10+j*24, j*16, 80 + (j*30))
                     images_lidar = cv2.circle(
                         images_lidar,
                         (int(x), int(y)),

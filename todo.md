@@ -9,13 +9,14 @@
 Static memory consumption (2 A100m40 gpus, LB5): 28-36 Gi / GPU
 
 
-# Final:
+# V1:
 [] Train:
 - [x] default: original tfpp, reproduced
 - [x] static-LB2s1-L2: static with 2 samples, 250ms lookback
 - [x] static-LB5s1-L2: static with 5 samples, 1s lookback
 - [x] static-LB5s2-L2: static with 5 samples, 2s lookback
 - [x] LB2s1-L2: recurrent with 2 samples, 250ms lookback
+- [ ] LB5s1-L2: recurrent with 3 samples, 500ms lookback
 - [x] static-LB5s1-L8: larger fusor (8 layers)
 - [x] static-LB5s1-L2-noself: no self-attn
 - [-] static-LB5s1-L2-notraj: w/o trajectory decoder
@@ -38,6 +39,17 @@ Static memory consumption (2 A100m40 gpus, LB5): 28-36 Gi / GPU
 - [ ] Static: LB2, LB5
 - [ ] Recurrent: LB1
 
+# V2:
+- [x] static-LB5s1
+- [x] static-LB9s1*
+- [x] static-LB9s2*
+- [x] LB5s2
+- [x] lidar-LB5s1
+- [x] static-LB5s1-notraj
+- [x] static-LB5s1-notraj
+- [x] static-LB5s1-noprune
+
+*=bad confidences
 
 [x] Find out what is wrong with trajectory prediction
 - [x] Implement multi-modality
@@ -68,3 +80,11 @@ Static memory consumption (2 A100m40 gpus, LB5): 28-36 Gi / GPU
 Ablations (what to do?):
 - Masking speed token vs not?
 - Temporal module size (n_layers, say 2 vs 8)
+
+# Static-LB5s1-L2: 
+Overtaking :  0.5555555555555556
+Merging :  0.4875
+Emergency_Brake :  0.8333333333333334
+Give_Way :  0.6
+Traffic_Signs :  0.7947368421052632
+Mean:0.6542251461988304

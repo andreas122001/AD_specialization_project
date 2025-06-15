@@ -1,4 +1,4 @@
-export SLURM_JOB_NAME="demo/dev-focal"
+export SLURM_JOB_NAME="dev/runtime"
 
 echo $SLURM_JOB_ID
 
@@ -8,7 +8,10 @@ export DATASET=garage_v2_2025_03_15
 export CARLA_ROOT=$PROJECT_ROOT/carla
 export PYTHONPATH="${CARLA_ROOT}/PythonAPI/carla/":${PYTHONPATH}
 
-export OMP_NUM_THREADS=4  # Limits pytorch to spawn at most num cpus cores threads
+# Architectures:
+# resnet34, regnety_032, video_resnet18, video_swin_tiny
+
+export OMP_NUM_THREADS=1  # Limits pytorch to spawn at most num cpus cores threads
 export OPENBLAS_NUM_THREADS=1  # Shuts off numpy multithreading, to avoid threads spawning other threads.
 torchrun --nnodes=1 --nproc_per_node=1 --max_restarts=0 --rdzv_id=$SLURM_JOB_ID --rdzv_backend=c10d \
     train.py --id $SLURM_JOB_NAME \
@@ -16,20 +19,20 @@ torchrun --nnodes=1 --nproc_per_node=1 --max_restarts=0 --rdzv_id=$SLURM_JOB_ID 
     --crop_image 1 \
     --seed 0 \
     --epochs 31 \
-    --batch_size 4 \
-    --seq_len 2 \
+    --batch_size 8 \
+    --seq_len 1 \
     --seq_step 1 \
-    --use_temporal_fusion 1 \
+    --use_temporal_fusion 0 \
     --use_recurrent_training 0 \
-    --temporal_fusion_layers 2 \
-    --use_trajectory_prediction 1 \
+    --temporal_fusion_layers 4 \
+    --use_trajectory_prediction 0 \
     --use_trajectory_target_speed_mask 1 \
     --trajectory_pred_len 6 \
     --trajectory_step_size 2 \
-    --trajectory_modes 32 \
-    --use_semantic 0 \
-    --use_bev_semantic 0 \
-    --use_depth 0 \
+    --trajectory_modes 6 \
+    --use_semantic 1 \
+    --use_bev_semantic 1 \
+    --use_depth 1 \
     --detect_boxes 1 \
     --use_controller_input_prediction 1 \
     --use_wp_gru 0 \
@@ -45,5 +48,5 @@ torchrun --nnodes=1 --nproc_per_node=1 --max_restarts=0 --rdzv_id=$SLURM_JOB_ID 
     --use_cosine_schedule 1 \
     --cosine_t0 1 \
     --image_architecture regnety_032 \
-    --lidar_architecture regnety_032 \
-    --load_file $PROJECT_ROOT/results/training/tfpp_base/model_0030.pth
+    --lidar_architecture regnety_032
+    # --load_file $PROJECT_ROOT/results/training/tfpp_base/model_0030.pth

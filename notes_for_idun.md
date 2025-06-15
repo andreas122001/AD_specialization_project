@@ -188,3 +188,16 @@ elif config.lidar_architecture == "video_swin_tiny":
 
 *NOTE*: this only fixes it so that the shapes fit together (found by just testing different values and seeing how the token lengths change), but I am not completely sure that this does not affect anything else.
 
+
+## Some nice one-liners
+
+Cancel all jobs with a name according to '*PATTERN*':
+```bash
+for name in $(squeue -ho %j --me | grep PATTERN); do squeue --me -ho %i --name $name | xargs scancel; done
+```
+
+
+## Running Bench2Drive
+
+Use the 'evaluate_routes_slurm_tfpp.py'-script, but switch out the leaderboard evaluator and scenario runner.
+

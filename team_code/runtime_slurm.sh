@@ -1,17 +1,19 @@
 #!/bin/bash
 #SBATCH --account=share-ie-idi
-#SBATCH --job-name=v2/static-LB2s1
+#SBATCH --job-name=v4/LB2
 #SBATCH --ntasks=1
 #SBATCH --nodes=1
-#SBATCH --time=5-12:00:00
-#SBATCH --gres=gpu:4
+#SBATCH --time=0-00:40:00
+#SBATCH --gres=gpu:1
 #SBATCH --mem=64gb
 #SBATCH --cpus-per-task=16
-#SBATCH -o /cluster/work/andrebw/repos/temporal_garage/results/logs/%x/tfpp_%a_%A.out  # File to which STDOUT will be written
-#SBATCH -e /cluster/work/andrebw/repos/temporal_garage/results/logs/%x/tfpp_%a_%A.out  # File to which STDERR will be written
+#SBATCH -o /cluster/work/andrebw/runtimes/%x.out
+#SBATCH -e /cluster/work/andrebw/runtimes/%x.out
 #SBATCH --partition=GPUQ
-#SBATCH --constraint=(a100|h100)
+#SBATCH --constraint=(h100)
 # #SBATCH --nodelist=idun-01-[01-06],idun-06-[01-07],idun-07-[08-10],idun-08-01
+
+
 
 # IMPORTANT: Start this script from within team_code folder, otherwise it will not work
 
@@ -20,13 +22,13 @@ scontrol show job $SLURM_JOB_ID
 
 echo SLURM_JOB_GPUS: $SLURM_JOB_GPUS
 export NGPUS=$(echo $SLURM_JOB_GPUS | grep -oP [0-9]+ | wc -l)
-export BATCH_SIZE=$((32 / $NGPUS))
+export BATCH_SIZE=$((8 / $NGPUS))
 echo NGPUS: $NGPUS
 echo Per-GPU batch size: $BATCH_SIZE
 
 pwd
 export PROJECT_ROOT=/cluster/work/andrebw/repos/temporal_garage
-export DATASET=leaderboard_2
+export DATASET=garage_v2_2025_03_15
 export CARLA_ROOT=$PROJECT_ROOT/carla
 export PYTHONPATH="${CARLA_ROOT}/PythonAPI/carla/":${PYTHONPATH}
 
@@ -40,10 +42,10 @@ torchrun --nnodes=1 --nproc_per_node=$NGPUS --max_restarts=0 --rdzv_id=$SLURM_JO
     --use_disk_cache 1 \
     --crop_image 1 \
     --seed 0 \
-    --epochs 31 \
+    --epochs 3 \
     --batch_size $BATCH_SIZE \
     --use_temporal_fusion 1 \
-    --use_recurrent_training 0 \
+    --use_recurrent_training 1 \
     --use_temporal_self_attn 0 \
     --temporal_fusion_layers 4 \
     --temporal_fusion_heads 4 \
@@ -75,9 +77,9 @@ torchrun --nnodes=1 --nproc_per_node=$NGPUS --max_restarts=0 --rdzv_id=$SLURM_JO
     --cosine_t0 1 \
     --validation \
     --image_architecture regnety_032 \
-    --lidar_architecture regnety_032 \
-    --load_file $PROJECT_ROOT/results/training/tfpp_base/model_0030.pth
-#    --load_file $PROJECT_ROOT/results/training/v2/static-LB9s4/model_0003.pth
+    --lidar_architecture regnety_032
+    # --load_file $PROJECT_ROOT/results/training/tfpp_base/model_0030.pth
+    # --load_file $PROJECT_ROOT/results/training/v2/static-LB9s4/model_0003.pth
     # --load_file $PROJECT_ROOT/results/training/v2/static-LB9s1-notraj/model_0029.pth
     # --load_file $PROJECT_ROOT/results/training/v2/lidar-LB5s1/model_0011.pth
     # --load_file $PROJECT_ROOT/results/training/v1/stg1-lidar-LB5s1/model_0030.pth

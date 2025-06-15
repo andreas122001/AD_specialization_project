@@ -126,7 +126,7 @@ def make_jobsub_file(commands, job_number, exp_name, exp_root_name, partition, i
 #SBATCH --mem=20gb
 #SBATCH --time={'00-00:25:00' if is_bench2drive else '00-01:00:00'}
 #SBATCH --gres=gpu:1
-#SBATCH --constraint=(v100|p100|h100)
+#SBATCH --constraint=(v100|p100|a100|h100)
 """
 # V100s and P100s seems to be enough
     for cmd in commands:
@@ -262,7 +262,7 @@ def main():
     # route_root = f"leaderboard/data/bench2drive_split"
     # route_root = f"data/selection/"
     route_pattern = "*.xml"
-    failed_is_fine = False  # True means skip failed routes upon resuming (only for resume=1), if False, rerun failed routes also
+    failed_is_fine = True  # True means skip failed routes upon resuming (only for resume=1), if False, rerun failed routes also
     route_files = glob.glob(f"{route_root}/**/{route_pattern}", recursive=True)
 
     carla_world_port_start = 10000

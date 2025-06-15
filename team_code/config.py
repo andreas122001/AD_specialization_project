@@ -726,7 +726,7 @@ class GlobalConfig:
 
         self.use_trajectory_prediction = False  # Whether to use trajectory prediction as auxiliary task
         self.trajectory_pred_len = 6
-        self.trajectory_modes = 16  # number of trajectory modes for multimodal trajectory prediction
+        self.trajectory_modes = 6  # number of trajectory modes for multimodal trajectory prediction
         self.trajectory_step_size = 2
         self.trajectory_decoder_layers = 1
         self.trajectory_loss_type = "l2"  # Loss function for trajectory prediction task ("l1", "l2", or "huber")

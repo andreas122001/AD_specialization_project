@@ -252,8 +252,7 @@ class SensorAgent(autonomous_agent.AutonomousAgent):
         [self.spatiotemporal_feature_buffer.append(None) for _ in range(see_every)]
         print("Feature buffer size: ", len(self.spatiotemporal_feature_buffer))
 
-        self.elapsed_time = 0.0
-        self.counted_timesteps = 0
+        self.elapsed_time = [0.0]
 
 
     def _init(self):
@@ -631,7 +630,7 @@ class SensorAgent(autonomous_agent.AutonomousAgent):
                 )
                 lidar_bev.append(lidar_histogram)
 
-                lidar_bev = torch.cat(lidar_bev, dim=1)
+            lidar_bev = torch.cat(lidar_bev, dim=1)
 
         if self.config.backbone not in ("aim"):
             self.lidar_last = deepcopy(tick_data["lidar"])
@@ -903,10 +902,12 @@ class SensorAgent(autonomous_agent.AutonomousAgent):
 
         time1 = time.perf_counter()
         elapsed = time1 - time0
-        if self.step > 9:
-            self.elapsed_time += elapsed
-            self.counted_timesteps += 1
-            print(f"{self.step} Step time: {elapsed*1000:.1f} ms (avg: {1000*self.elapsed_time / self.counted_timesteps:1f} ms, tot: {self.elapsed_time:.1f} s)", end=" ")
+        if self.step > 2:
+            self.elapsed_time.append(elapsed)
+            elapsed_time = np.array(self.elapsed_time)
+            print(f"{self.step} Step time: {elapsed*1000:.1f} ms (avg: {1000*elapsed_time[300:].mean():1f} ms, tot: {elapsed_time.sum():.1f} s)", end=" ")
+        else:
+            print(f"{self.step} Step time: {elapsed*1000:.1f} ms", end=" ")
         return control
 
     def stop_sign_controller_step(self, ego_speed):

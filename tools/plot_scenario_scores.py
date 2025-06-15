@@ -6,12 +6,12 @@ from collections import defaultdict
 
 
 def main():
-    path_template = "evaluation/{}_routes_validation_model_0030/{}_routes_validation_e0_model_0030/results.json"
+    path_template = "evaluation/routes_validation/{}_e30/{}_r0/results.json"
 
     files = [
-        "tfpp_s2s1",
-        "tfpp_s2s1_old",
-        "tfpp_default_old"
+    #    "tfpp_s2s1",
+        "static-LB9s1",
+        "tfpp_default"
     ]  # Replace with your files
     score_type = "score_composed"  # Choose score_route, score_penalty, etc.
     score_types = {
@@ -40,7 +40,7 @@ def main():
     plt.figure(figsize=(10, len(scenario_data) * 0.2 + 2))  # Adjust height
 
     # Create y-positions for scenarios
-    scenarios = sorted(scenario_data.keys())
+    scenarios = scenario_data.keys()
     y_pos = np.arange(len(scenarios))
 
     # Plot each scenario
@@ -81,7 +81,7 @@ def main():
     plt.legend(bbox_to_anchor=(1.1, 1.05), title="Model Version")
 
     plt.tight_layout()
-    #plt.save('plot.png')
+    plt.savefig('plot.png')
     plt.show()
 
 if __name__ == "__main__":

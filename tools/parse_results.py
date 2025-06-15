@@ -7,9 +7,14 @@ import ujson
 # root = "/cluster/work/andrebw/repos/temporal_garage/results/data/garage_v2_2025_03_25/results"
 # root = "/cluster/work/andrebw/repos/temporal_garage/evaluation/tfpp_s2s1_old_routes_validation_model_0030/tfpp_s2s1_old_routes_validation_e0_model_0030/results"
 #root = "/cluster/work/andrebw/repos/temporal_garage/evaluation/tfpp_static_s5s2_routes_validation_model_0030/tfpp_static_s5s2_routes_validation_e0_model_0030/results"
-root = "/cluster/work/andrebw/repos/temporal_garage/evaluation/routes_validation/tfpp_default_e30/rep0/results"
-root = "/cluster/work/andrebw/repos/temporal_garage/evaluation/routes_validation/static-LB2s1-L2_e30/static-LB2s1-L2_r0/results/"
 #root = "/cluster/work/andrebw/repos/temporal_garage/evaluation/routes_validation/tfpp_default_e30/rep0/results"
+#root = "/cluster/work/andrebw/repos/temporal_garage/evaluation/routes_validation/static-LB2s1-L2_e30/static-LB2s1-L2_r0/results/"
+#root = "/cluster/work/andrebw/repos/temporal_garage/evaluation/routes_validation/tfpp_default_e30/rep0/results"
+#root = "/cluster/work/andrebw/repos/temporal_garage/evaluation/bench2drive/LB2s1-L2_e30/LB2s1-L2_r0/results"
+#root = "/cluster/work/andrebw/repos/temporal_garage/evaluation/bench2drive/static-LB5s1-L2-noself_e30/static-LB5s1-L2-noself_r0/results"
+#root = "/cluster/work/andrebw/repos/temporal_garage/evaluation/bench2drive/static-LB5s1-L2_e30/static-LB5s1-L2_r0/results"
+root = "/cluster/work/andrebw/repos/temporal_garage/evaluation/routes_validation/static-LB9s2_e30/static-LB9s2_r0/results"
+#root = "/cluster/work/andrebw/repos/temporal_garage/evaluation/bench2drive/tfpp_default_e30/tfpp_default_r0/results"
 
 result_files = glob.glob(f"{root}/**/*.json", recursive=True)
 

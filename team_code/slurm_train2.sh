@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --account=share-ie-idi
-#SBATCH --job-name=v2/static-LB2s1
+#SBATCH --job-name=v2/static-LB5s1-large
 #SBATCH --ntasks=1
 #SBATCH --nodes=1
 #SBATCH --time=5-12:00:00
@@ -45,14 +45,14 @@ torchrun --nnodes=1 --nproc_per_node=$NGPUS --max_restarts=0 --rdzv_id=$SLURM_JO
     --use_temporal_fusion 1 \
     --use_recurrent_training 0 \
     --use_temporal_self_attn 0 \
-    --temporal_fusion_layers 4 \
+    --temporal_fusion_layers 12 \
     --temporal_fusion_heads 4 \
-    --seq_len 2 \
+    --seq_len 5 \
     --seq_step 1 \
     --lidar_seq_len 1 \
     --lidar_step_size 1 \
     --use_trajectory_prediction 1 \
-    --trajectory_decoder_layers 1 \
+    --trajectory_decoder_layers 2 \
     --trajectory_loss_type huber \
     --use_trajectory_target_speed_mask 1 \
     --trajectory_pred_len 6 \
@@ -77,7 +77,7 @@ torchrun --nnodes=1 --nproc_per_node=$NGPUS --max_restarts=0 --rdzv_id=$SLURM_JO
     --image_architecture regnety_032 \
     --lidar_architecture regnety_032 \
     --load_file $PROJECT_ROOT/results/training/tfpp_base/model_0030.pth
-#    --load_file $PROJECT_ROOT/results/training/v2/static-LB9s4/model_0003.pth
+    # --load_file $PROJECT_ROOT/results/training/v2/static-LB9s4/model_0003.pth
     # --load_file $PROJECT_ROOT/results/training/v2/static-LB9s1-notraj/model_0029.pth
     # --load_file $PROJECT_ROOT/results/training/v2/lidar-LB5s1/model_0011.pth
     # --load_file $PROJECT_ROOT/results/training/v1/stg1-lidar-LB5s1/model_0030.pth
