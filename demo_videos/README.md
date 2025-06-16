@@ -1,1 +1,1 @@
-Here, a selecting of demo videos can be found, categorized by scenario. These videos (.m4) are too large to be viewed in GitHub and must be downloaded.
+Here, a selection of demo videos can be found, categorized by scenario. These videos (.m4) are too large to be viewed in GitHub and must therefore be downloaded (click "View raw" when clicking on a video).
