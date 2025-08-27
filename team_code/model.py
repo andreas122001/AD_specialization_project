@@ -407,6 +407,7 @@ class LidarCenterNet(nn.Module):
                 use_attn_weights=self.config.return_temporal_attn_weights,
                 learnable_init=self.config.use_learnable_historic_initialization,
                 use_self_attn=self.config.use_temporal_self_attn,
+                use_memory_gating=self.config.use_memory_gating,
             )
 
     def reset_parameters(self):

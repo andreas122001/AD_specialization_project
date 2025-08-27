@@ -178,7 +178,7 @@ def main():
     parser.add_argument(
         "--model_dir",
         type=str,
-        default="/cluster/work/andrebw/repos/temporal_garage/results/training/v2",
+        default="/cluster/work/andrebw/repos/temporal_garage/results/training/v3",
         help="Folder containing all the experiment folders.",
     )
     parser.add_argument(

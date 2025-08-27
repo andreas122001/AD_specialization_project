@@ -1,15 +1,17 @@
 #!/bin/bash
 #SBATCH --account=share-ie-idi
-#SBATCH --job-name=v2/static-LB5s1-large
+#SBATCH --job-name=v3/LB5s1-large-gating
 #SBATCH --ntasks=1
 #SBATCH --nodes=1
 #SBATCH --time=5-12:00:00
-#SBATCH --gres=gpu:4
+#SBATCH --gres=gpu:2
 #SBATCH --mem=64gb
 #SBATCH --cpus-per-task=16
 #SBATCH -o /cluster/work/andrebw/repos/temporal_garage/results/logs/%x/tfpp_%a_%A.out  # File to which STDOUT will be written
 #SBATCH -e /cluster/work/andrebw/repos/temporal_garage/results/logs/%x/tfpp_%a_%A.out  # File to which STDERR will be written
 #SBATCH --partition=GPUQ
+#SBATCH --mail-user=andreaswinje@hotmail.com
+#SBATCH --mail-type=ALL
 #SBATCH --constraint=(a100|h100)
 # #SBATCH --nodelist=idun-01-[01-06],idun-06-[01-07],idun-07-[08-10],idun-08-01
 
@@ -30,6 +32,14 @@ export DATASET=leaderboard_2
 export CARLA_ROOT=$PROJECT_ROOT/carla
 export PYTHONPATH="${CARLA_ROOT}/PythonAPI/carla/":${PYTHONPATH}
 
+# Extract temporal len/res
+LB=$(echo $SLURM_JOB_NAME | grep -oP 'LB[0-9]*s[0-9]*')
+SEQ_LEN=${LB:2:1}
+SEQ_STEP=${LB:4:1}
+
+if [[ $SLURM_JOB_NAME == *"static"* ]]; then RECURRENT=0; else RECURRENT=1; fi
+if [[ $SLURM_JOB_NAME == *"self"* ]]; then SELF=1; else SELF=0; fi
+
 # Architectures:
 # resnet34, regnety_032, video_resnet18, video_swin_tiny
 
@@ -39,19 +49,20 @@ torchrun --nnodes=1 --nproc_per_node=$NGPUS --max_restarts=0 --rdzv_id=$SLURM_JO
     train.py --id $SLURM_JOB_NAME \
     --use_disk_cache 1 \
     --crop_image 1 \
-    --seed 0 \
+    --seed 69 \
     --epochs 31 \
     --batch_size $BATCH_SIZE \
     --use_temporal_fusion 1 \
-    --use_recurrent_training 0 \
-    --use_temporal_self_attn 0 \
-    --temporal_fusion_layers 12 \
+    --use_recurrent_training $RECURRENT \
+    --use_temporal_self_attn $SELF \
+    --use_memory_gating 1 \
+    --temporal_fusion_layers 8 \
     --temporal_fusion_heads 4 \
-    --seq_len 5 \
-    --seq_step 1 \
+    --seq_len $SEQ_LEN \
+    --seq_step $SEQ_STEP \
     --lidar_seq_len 1 \
     --lidar_step_size 1 \
-    --use_trajectory_prediction 1 \
+    --use_trajectory_prediction 0 \
     --trajectory_decoder_layers 2 \
     --trajectory_loss_type huber \
     --use_trajectory_target_speed_mask 1 \

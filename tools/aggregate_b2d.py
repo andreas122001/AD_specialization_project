@@ -4,7 +4,7 @@ from collections import defaultdict
 import numpy as np
 
 root = "/cluster/work/andrebw/repos/temporal_garage/evaluation/bench2drive"
-names = ["static-LB9s1", "static-LB9s2", "LB5s1", "static-LB9s1-notraj", "lidar-LB5s1", "static-LB5s1", "tfpp_default", "static-LB5s1-large", "static-LB5s1-noprune", "static-LB5s1x", "static-LB5s1-notraj"]
+names = ["static-LB9s1", "static-LB9s2", "LB5s1", "static-LB9s1-notraj", "lidar-LB5s1", "static-LB5s1", "tfpp_default", "static-LB5s1-large", "static-LB5s1-noprune", "static-LB5s1x", "static-LB5s1-notraj", "larger-LB9s2"]
 
 for name in names:
     model_path = os.path.join(root, f"{name}_e30")

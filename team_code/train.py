@@ -580,7 +580,13 @@ def main():
         "--use_temporal_self_attn",
         type=int,
         default=config.use_temporal_self_attn,
-        help="whether t o use self attention in the temporal fusion module",
+        help="whether to use self attention in the temporal fusion module",
+    )     
+    parser.add_argument(
+        "--use_memory_gating",
+        type=int,
+        default=config.use_memory_gating,
+        help="whether to use memory gating in the temporal fusion module",
     )    
     parser.add_argument(
         "--use_trajectory_prediction",
@@ -612,6 +618,12 @@ def main():
         type=int,
         default=config.trajectory_step_size,
         help="how many frames between each trajectory point",
+    )
+    parser.add_argument(
+        "--max_num_trajectories",
+        type=int,
+        default=config.max_num_trajectories,
+        help="The number of objects to predict trajectories for"
     )
     parser.add_argument(
         "--trajectory_decoder_layers",

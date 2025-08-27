@@ -1,9 +1,9 @@
 #!/bin/bash
-#SBATCH --account=share-ie-idi
-#SBATCH --job-name=v2/static-LB2s1
+#SBATCH --account=ie-idi
+#SBATCH --job-name=v3/large-LB9s2
 #SBATCH --ntasks=1
 #SBATCH --nodes=1
-#SBATCH --time=5-12:00:00
+#SBATCH --time=7-00:00:00
 #SBATCH --gres=gpu:4
 #SBATCH --mem=64gb
 #SBATCH --cpus-per-task=16
@@ -11,6 +11,9 @@
 #SBATCH -e /cluster/work/andrebw/repos/temporal_garage/results/logs/%x/tfpp_%a_%A.out  # File to which STDERR will be written
 #SBATCH --partition=GPUQ
 #SBATCH --constraint=(a100|h100)
+#SBATCH --mail-user=andreaswinje@hotmail.com
+#SBATCH --mail-type=ALL
+
 # #SBATCH --nodelist=idun-01-[01-06],idun-06-[01-07],idun-07-[08-10],idun-08-01
 
 # IMPORTANT: Start this script from within team_code folder, otherwise it will not work
@@ -46,15 +49,16 @@ torchrun --nnodes=1 --nproc_per_node=$NGPUS --max_restarts=0 --rdzv_id=$SLURM_JO
     --use_recurrent_training 0 \
     --use_temporal_self_attn 0 \
     --temporal_fusion_layers 4 \
-    --temporal_fusion_heads 4 \
-    --seq_len 2 \
-    --seq_step 1 \
+    --temporal_fusion_heads 16 \
+    --seq_len 9 \
+    --seq_step 2 \
     --lidar_seq_len 1 \
     --lidar_step_size 1 \
     --use_trajectory_prediction 1 \
-    --trajectory_decoder_layers 1 \
+    --trajectory_decoder_layers 4 \
     --trajectory_loss_type huber \
     --use_trajectory_target_speed_mask 1 \
+    --max_num_trajectories 10 \
     --trajectory_pred_len 6 \
     --trajectory_step_size 2 \
     --trajectory_modes 6 \

@@ -6,7 +6,7 @@ from typing import Optional
 
 class TemporalFusionBlock(nn.Module):
     def __init__(
-        self, embedded_dim: int, hidden_dim: int = 1024, n_heads: int = 1, dropout: float = 0.2, use_attn_weights: bool = False
+        self, embedded_dim: int, hidden_dim: int = 1024, n_heads: int = 1, dropout: float = 0.2, use_attn_weights: bool = False, use_memory_gating: bool = False
     ) -> None:
         """
         Args:
@@ -19,6 +19,7 @@ class TemporalFusionBlock(nn.Module):
         super().__init__()
         self.use_attn_weights = use_attn_weights
         self.embedded_dim = embedded_dim  # e.g. 256
+        self.use_gating = use_memory_gating
 
         # Fusion layers
         self.cross_attn = MultiheadAttention(embedded_dim, n_heads, dropout=dropout, batch_first=True)
@@ -51,6 +52,14 @@ class TemporalFusionBlock(nn.Module):
         # current feat. is already normalized in TF backbone output
         historic_feature = self.historic_norm(historic_feature)
 
+        if self.use_gating:
+            bz = historic_feature.shape[0]
+
+            # Add a "void token" to attend to when current history is uninteresting. Similar to memory gating.
+            # Allows the model to "forget" (aka. not retain information for a specific step)
+            void_token = torch.zeros(bz, 1, self.embedded_dim).to(historic_feature.device)
+            historic_feature = torch.cat([historic_feature, void_token], dim=1)
+
         # Cross-attention, fuse current and historic features
         fused_feature, cross_weights = self.cross_attn(
             current_feature, historic_feature, historic_feature,
@@ -76,20 +85,21 @@ class TemporalFusionBlock(nn.Module):
 
 class TemporalFusionBlockNoSelfAttn(nn.Module):
     def __init__(
-        self, embedded_dim: int, hidden_dim: int = 1024, n_heads: int = 1, dropout: float = 0.2, use_attn_weights: bool = False
+        self, embedded_dim: int, hidden_dim: int = 1024, n_heads: int = 1, dropout: float = 0.2, use_attn_weights: bool = False, use_memory_gating: bool = False
     ) -> None:
         """
         Args:
             embedded_dim: int - Dimension of the input features (e.g., 256)
             hidden_dim: int - Dimension of the hidden layer in the MLP (e.g., 1024)
             n_heads: int - Number of attention heads (e.g., 1)
+            dropout: float - What dropout ratio to use (e.g. 0.2)
             use_attn_weights: bool - Whether to return attention weights, or use optimized attention
-            learnable_init: bool - Whether to use a learnable initialization for historic features, else use zeros
+            use_memory_gating: bool - Whether to use memory gating
         """
         super().__init__()
         self.use_attn_weights = use_attn_weights
         self.embedded_dim = embedded_dim  # e.g. 256
-
+        self.use_gating = use_memory_gating
         # Fusion layers
         self.cross_attn = MultiheadAttention(embedded_dim, n_heads, dropout=dropout, batch_first=True)
         self.mlp = nn.Sequential(
@@ -119,6 +129,14 @@ class TemporalFusionBlockNoSelfAttn(nn.Module):
         # current feat. is already normalized in TF backbone output
         historic_feature = self.historic_norm(historic_feature)
 
+        if self.use_gating:
+            bz = historic_feature.shape[0]
+
+            # Add a "void token" to attend to when current history is uninteresting. Similar to memory gating.
+            # Allows the model to "forget" (aka. not retain information for a specific step)
+            void_token = torch.zeros(bz, 1, self.embedded_dim).to(historic_feature.device)
+            historic_feature = torch.cat([historic_feature, void_token], dim=1)
+
         # Cross-attention, fuse current and historic features
         fused_feature, cross_weights = self.cross_attn(
             current_feature, historic_feature, historic_feature,
@@ -136,7 +154,7 @@ class TemporalFusionBlockNoSelfAttn(nn.Module):
 
 class MHATemporalFusion(nn.Module):
     def __init__(
-        self, embedded_dim: int, n_layers: int = 1, hidden_dim: int = 1024, n_heads: int = 1, dropout: float = 0.2, use_attn_weights: bool = False, learnable_init: bool = True, use_self_attn = True
+        self, embedded_dim: int, n_layers: int = 1, hidden_dim: int = 1024, n_heads: int = 1, dropout: float = 0.2, use_attn_weights: bool = False, learnable_init: bool = True, use_self_attn: bool = True, use_memory_gating: bool = False
     ) -> None:
         """
         Args:
@@ -165,6 +183,7 @@ class MHATemporalFusion(nn.Module):
                 n_heads=n_heads, 
                 dropout=dropout, 
                 use_attn_weights=use_attn_weights,
+                use_memory_gating=use_memory_gating,
             ) for _ in range(n_layers)]
         )
 
