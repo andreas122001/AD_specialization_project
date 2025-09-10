@@ -1,5 +1,20 @@
 # TODO:
 
+## PAPER
+
+HOW CAN WE FIX THE RESULTS?
+- Need more runs (3 trainings * 3 evals = 9 runs per experiment)
+- Which experiments to focus on?
+    - Do we do more sequence scaling tests?
+    - Do we test parameter scaling?
+    - How can we ablate gating mechanism? (And what to do if it doesn't work?)
+    - Focus only on a set seq + param and do an ensamble?
+
+
+
+
+## OLD
+
 [x] Bugfix
 - [x] Use correct temporal stride for evaluation (has a higher fps)
     - [x] Did fixing this impact performance?

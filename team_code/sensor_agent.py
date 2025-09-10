@@ -170,7 +170,11 @@ class SensorAgent(autonomous_agent.AutonomousAgent):
                     net = torch.compile(net, mode=self.config.compile_mode)
 
                 self.nets.append(net)
-
+        
+        if self.model_count > 1:
+            print(f"Using ensemble of {self.model_count} models.")
+        else:
+            print("Not using ensemble.")
         self.stuck_detector = 0
         self.force_move = 0
 

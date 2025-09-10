@@ -1,16 +1,16 @@
 #!/bin/bash
-#SBATCH --account=ie-idi
-#SBATCH --job-name=v3/large-LB9s2
+#SBATCH --account=share-ie-idi
+#SBATCH --job-name=default/tfpp_default_seed64
 #SBATCH --ntasks=1
 #SBATCH --nodes=1
-#SBATCH --time=7-00:00:00
-#SBATCH --gres=gpu:4
+#SBATCH --time=2-00:00:00
+#SBATCH --gres=gpu:2
 #SBATCH --mem=64gb
 #SBATCH --cpus-per-task=16
 #SBATCH -o /cluster/work/andrebw/repos/temporal_garage/results/logs/%x/tfpp_%a_%A.out  # File to which STDOUT will be written
 #SBATCH -e /cluster/work/andrebw/repos/temporal_garage/results/logs/%x/tfpp_%a_%A.out  # File to which STDERR will be written
 #SBATCH --partition=GPUQ
-#SBATCH --constraint=(a100|h100)
+#SBATCH --constraint=(a100|h100|v100|p100)
 #SBATCH --mail-user=andreaswinje@hotmail.com
 #SBATCH --mail-type=ALL
 
@@ -42,19 +42,19 @@ torchrun --nnodes=1 --nproc_per_node=$NGPUS --max_restarts=0 --rdzv_id=$SLURM_JO
     train.py --id $SLURM_JOB_NAME \
     --use_disk_cache 1 \
     --crop_image 1 \
-    --seed 0 \
+    --seed 64 \
     --epochs 31 \
     --batch_size $BATCH_SIZE \
-    --use_temporal_fusion 1 \
+    --use_temporal_fusion 0 \
     --use_recurrent_training 0 \
     --use_temporal_self_attn 0 \
     --temporal_fusion_layers 4 \
     --temporal_fusion_heads 16 \
-    --seq_len 9 \
-    --seq_step 2 \
+    --seq_len 1 \
+    --seq_step 1 \
     --lidar_seq_len 1 \
     --lidar_step_size 1 \
-    --use_trajectory_prediction 1 \
+    --use_trajectory_prediction 0 \
     --trajectory_decoder_layers 4 \
     --trajectory_loss_type huber \
     --use_trajectory_target_speed_mask 1 \
@@ -68,7 +68,7 @@ torchrun --nnodes=1 --nproc_per_node=$NGPUS --max_restarts=0 --rdzv_id=$SLURM_JO
     --detect_boxes 1 \
     --use_controller_input_prediction 1 \
     --use_wp_gru 0 \
-    --continue_epoch 0 \
+    --continue_epoch 1 \
     --lr 3e-4 \
     --setting 13_withheld \
     --root_dir $PROJECT_ROOT/results/data/$DATASET/data \
@@ -80,7 +80,8 @@ torchrun --nnodes=1 --nproc_per_node=$NGPUS --max_restarts=0 --rdzv_id=$SLURM_JO
     --validation \
     --image_architecture regnety_032 \
     --lidar_architecture regnety_032 \
-    --load_file $PROJECT_ROOT/results/training/tfpp_base/model_0030.pth
+    --load_file $PROJECT_ROOT/results/training/default/tfpp_default_seed64/model_0019.pth
+#    --load_file $PROJECT_ROOT/results/training/tfpp_base/model_0030.pth
 #    --load_file $PROJECT_ROOT/results/training/v2/static-LB9s4/model_0003.pth
     # --load_file $PROJECT_ROOT/results/training/v2/static-LB9s1-notraj/model_0029.pth
     # --load_file $PROJECT_ROOT/results/training/v2/lidar-LB5s1/model_0011.pth

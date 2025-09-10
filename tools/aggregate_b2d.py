@@ -3,8 +3,11 @@ import os
 from collections import defaultdict
 import numpy as np
 
-root = "/cluster/work/andrebw/repos/temporal_garage/evaluation/bench2drive"
-names = ["static-LB9s1", "static-LB9s2", "LB5s1", "static-LB9s1-notraj", "lidar-LB5s1", "static-LB5s1", "tfpp_default", "static-LB5s1-large", "static-LB5s1-noprune", "static-LB5s1x", "static-LB5s1-notraj", "larger-LB9s2"]
+root = "/cluster/work/andrebw/repos/temporal_garage/evaluation/v3/bench2drive"
+names = os.listdir("results/training/v3")
+
+os.makedirs(os.path.join(root, "..", "merged_b2d"), exist_ok=True)
+# names = ["static-LB9s1", "static-LB9s2", "LB5s1", "static-LB9s1-notraj", "lidar-LB5s1", "static-LB5s1", "tfpp_default", "static-LB5s1-large", "static-LB5s1-noprune", "static-LB5s1x", "static-LB5s1-notraj", "larger-LB9s2"]
 
 for name in names:
     model_path = os.path.join(root, f"{name}_e30")
@@ -38,7 +41,7 @@ for name in names:
         'std': metrics_stdv
     }
     
-    save_to = f"/cluster/work/andrebw/repos/temporal_garage/evaluation/merged_b2d/{name}.json"
+    save_to = f"/cluster/work/andrebw/repos/temporal_garage/evaluation/v3/merged_b2d/{name}.json"
     with open(save_to, "w") as f:
         ujson.dump(merged, f, indent=4)
         print(save_to)

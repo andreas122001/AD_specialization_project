@@ -126,7 +126,7 @@ def make_jobsub_file(commands, job_number, exp_name, exp_root_name, partition, i
 #SBATCH --mem=20gb
 #SBATCH --time={'00-00:25:00' if is_bench2drive else '00-01:00:00'}
 #SBATCH --gres=gpu:1
-#SBATCH --constraint=(v100|p100|a100|h100)
+#SBATCH --constraint=(v100|p100)
 """
 # V100s and P100s seems to be enough
     for cmd in commands:
@@ -276,7 +276,7 @@ def main():
     for epoch in epochs:
         # Root folder in which each of the evaluation seeds will be stored
         name_suffix = f"e{int(epoch.split('_')[-1])}"
-        experiment_name_root = f"{benchmark}/{experiment}_{name_suffix}"
+        experiment_name_root = f"v3/{benchmark}/{experiment}_{name_suffix}"
         experiment_result_folders.append(experiment_name_root)
         exp_names = []
         for name in exp_names_tmp:
@@ -295,7 +295,7 @@ def main():
             cmd = f"cp {model_dir}/{checkpoint}/config.json {args.team_code}/checkpoints/{checkpoint_new_name}/"
             print(cmd)
             os.system(cmd)
-            cmd = f"ln -sf {model_dir}/{checkpoint}/{epoch}.pth {args.team_code}/checkpoints/{checkpoint_new_name}/model.pth"
+            cmd = f"for f in $(ls {model_dir}/{checkpoint}/* | grep -oE 'model_?[A-Z]?_[0-9]{{4}}.pth'); do ln -sf {model_dir}/{checkpoint}/$f {args.team_code}/checkpoints/{checkpoint_new_name}/$f; done"
             print(cmd)
             os.system(cmd)
 

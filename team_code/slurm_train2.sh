@@ -1,10 +1,10 @@
 #!/bin/bash
 #SBATCH --account=share-ie-idi
-#SBATCH --job-name=v3/LB5s1-large-gating
+#SBATCH --job-name=v3/static-LB5s1-large-gating-seed64
 #SBATCH --ntasks=1
 #SBATCH --nodes=1
 #SBATCH --time=5-12:00:00
-#SBATCH --gres=gpu:2
+#SBATCH --gres=gpu:3
 #SBATCH --mem=64gb
 #SBATCH --cpus-per-task=16
 #SBATCH -o /cluster/work/andrebw/repos/temporal_garage/results/logs/%x/tfpp_%a_%A.out  # File to which STDOUT will be written
@@ -12,13 +12,17 @@
 #SBATCH --partition=GPUQ
 #SBATCH --mail-user=andreaswinje@hotmail.com
 #SBATCH --mail-type=ALL
-#SBATCH --constraint=(a100|h100)
+#SBATCH --constraint=(a100|h100|v100|p100)
 # #SBATCH --nodelist=idun-01-[01-06],idun-06-[01-07],idun-07-[08-10],idun-08-01
 
 # IMPORTANT: Start this script from within team_code folder, otherwise it will not work
 
 # print info about current job
 scontrol show job $SLURM_JOB_ID
+
+SEED=$(echo $SLURM_JOB_NAME | grep -oE "seed[0-9]*" | grep -oE "[0-9]*")
+if [ -z $SEED ]; then SEED=69; fi
+echo SEED: $SEED
 
 echo SLURM_JOB_GPUS: $SLURM_JOB_GPUS
 export NGPUS=$(echo $SLURM_JOB_GPUS | grep -oP [0-9]+ | wc -l)
@@ -39,6 +43,8 @@ SEQ_STEP=${LB:4:1}
 
 if [[ $SLURM_JOB_NAME == *"static"* ]]; then RECURRENT=0; else RECURRENT=1; fi
 if [[ $SLURM_JOB_NAME == *"self"* ]]; then SELF=1; else SELF=0; fi
+if [[ $SLURM_JOB_NAME == *"XL"* ]]; then LAYERS=16; else LAYERS=8; fi
+if [[ $SLURM_JOB_NAME == *"traj"* ]]; then TRAJ=1; else TRAJ=0; fi
 
 # Architectures:
 # resnet34, regnety_032, video_resnet18, video_swin_tiny
@@ -49,20 +55,20 @@ torchrun --nnodes=1 --nproc_per_node=$NGPUS --max_restarts=0 --rdzv_id=$SLURM_JO
     train.py --id $SLURM_JOB_NAME \
     --use_disk_cache 1 \
     --crop_image 1 \
-    --seed 69 \
+    --seed $SEED \
     --epochs 31 \
     --batch_size $BATCH_SIZE \
     --use_temporal_fusion 1 \
     --use_recurrent_training $RECURRENT \
     --use_temporal_self_attn $SELF \
     --use_memory_gating 1 \
-    --temporal_fusion_layers 8 \
+    --temporal_fusion_layers $LAYERS \
     --temporal_fusion_heads 4 \
     --seq_len $SEQ_LEN \
     --seq_step $SEQ_STEP \
     --lidar_seq_len 1 \
     --lidar_step_size 1 \
-    --use_trajectory_prediction 0 \
+    --use_trajectory_prediction $TRAJ \
     --trajectory_decoder_layers 2 \
     --trajectory_loss_type huber \
     --use_trajectory_target_speed_mask 1 \
@@ -88,7 +94,7 @@ torchrun --nnodes=1 --nproc_per_node=$NGPUS --max_restarts=0 --rdzv_id=$SLURM_JO
     --image_architecture regnety_032 \
     --lidar_architecture regnety_032 \
     --load_file $PROJECT_ROOT/results/training/tfpp_base/model_0030.pth
-    # --load_file $PROJECT_ROOT/results/training/v2/static-LB9s4/model_0003.pth
+    #--load_file $PROJECT_ROOT/results/training/v3/static-LB9s2-XL-gating/model_0019.pth
     # --load_file $PROJECT_ROOT/results/training/v2/static-LB9s1-notraj/model_0029.pth
     # --load_file $PROJECT_ROOT/results/training/v2/lidar-LB5s1/model_0011.pth
     # --load_file $PROJECT_ROOT/results/training/v1/stg1-lidar-LB5s1/model_0030.pth

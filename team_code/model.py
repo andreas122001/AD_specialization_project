@@ -1564,13 +1564,13 @@ class LidarCenterNet(nn.Module):
                     xerr=err,
                     fmt='o',
                     capsize=3,
-                    label="Spatial" if i == 0 else "Ego" if i==64 else None,
+                    label="Spatial" if i == 0 else "Ego" if i==64 else "Void" if i==65 else None,
                     markersize=4,
-                    color='tab:green' if i < 64 else 'tab:red',
+                    color='tab:green' if i < 64 else 'tab:red' if i==64 else 'tab:purple' if i==65 else 'black',
                     alpha=1.0,
                 )
 
-            plt.title("Past attn.", fontsize=10)
+            plt.title("Temporal attn.", fontsize=10)
             plt.legend(
                 loc='lower center',
                 bbox_to_anchor=(0.48, -0.002),  # center above the plot

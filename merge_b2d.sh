@@ -4,11 +4,7 @@ clean_carla="/cluster/work/andrebw/repos/temporal_garage/Bench2Drive/tools/clean
 
 
 FOLDERS=(
-    /cluster/work/andrebw/repos/temporal_garage/evaluation/bench2drive/tfpp_default_e30/tfpp_default_r[0-9]/results/bench2drive_split
-    /cluster/work/andrebw/repos/temporal_garage/evaluation/bench2drive/static-LB[0-9]s[0-9]*_e30/static-LB[0-9]s[0-9]*_r[0-9]/results/bench2drive_split
-    /cluster/work/andrebw/repos/temporal_garage/evaluation/bench2drive/LB5s1_e30/LB5s1_r[0-9]/results/bench2drive_split
-    /cluster/work/andrebw/repos/temporal_garage/evaluation/bench2drive/lidar-LB5s1_e30/lidar-LB5s1_r[0-9]/results/bench2drive_split
-    /cluster/work/andrebw/repos/temporal_garage/evaluation/bench2drive/larger-LB9s2_e30/larger-LB9s2_r[0-9]/results/bench2drive_split
+    /cluster/work/andrebw/repos/temporal_garage/evaluation/v3/bench2drive/**/*/results/bench2drive_split
 )
 
 i=0

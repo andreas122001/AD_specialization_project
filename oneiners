@@ -1,0 +1,6 @@
+
+# Quicly calculate avg driving score of a B2D run:
+run=static-LB5s4-large-gating; cat evaluation/v3/bench2drive/${run}_e30/${run}_r*/results/bench2drive_split/* | grep "                    \"score_composed" | cut -d":" -f2 | awk '{s+=$1}END{print "ave:",s/NR}' RS=" "
+
+# Same as above, but for all runs in a folder
+for f in $(ls evaluation/v3/bench2drive | cut -d"_" -f1); do echo $f, $(run=$f; cat evaluation/v3/bench2drive/${run}_e30/${run}_r*/results/bench2drive_split/* | grep "                    \"score_composed" | cut -d":" -f2 | awk '{s+=$1}END{print "ave:",s/NR}' RS=" "); done
