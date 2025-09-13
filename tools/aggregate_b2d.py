@@ -2,9 +2,16 @@ import ujson
 import os
 from collections import defaultdict
 import numpy as np
+import sys
 
-root = "/cluster/work/andrebw/repos/temporal_garage/evaluation/v3/bench2drive"
-names = os.listdir("results/training/v3")
+args = sys.argv
+if len(args) == 2:
+    VERSION = args[-1]
+else:
+    VERSION = "v3"
+
+root = f"/cluster/work/andrebw/repos/temporal_garage/evaluation/{VERSION}/bench2drive"
+names = os.listdir(f"results/training/{VERSION}")
 
 os.makedirs(os.path.join(root, "..", "merged_b2d"), exist_ok=True)
 # names = ["static-LB9s1", "static-LB9s2", "LB5s1", "static-LB9s1-notraj", "lidar-LB5s1", "static-LB5s1", "tfpp_default", "static-LB5s1-large", "static-LB5s1-noprune", "static-LB5s1x", "static-LB5s1-notraj", "larger-LB9s2"]
@@ -41,7 +48,7 @@ for name in names:
         'std': metrics_stdv
     }
     
-    save_to = f"/cluster/work/andrebw/repos/temporal_garage/evaluation/v3/merged_b2d/{name}.json"
+    save_to = f"/cluster/work/andrebw/repos/temporal_garage/evaluation/{VERSION}/merged_b2d/{name}.json"
     with open(save_to, "w") as f:
         ujson.dump(merged, f, indent=4)
         print(save_to)

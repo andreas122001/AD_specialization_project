@@ -1,10 +1,10 @@
 #!/bin/bash
 #SBATCH --account=share-ie-idi
-#SBATCH --job-name=v3/static-LB5s1-large-gating-seed64
+#SBATCH --job-name=v3/static-LB5s1-large-gating-seed32
 #SBATCH --ntasks=1
 #SBATCH --nodes=1
-#SBATCH --time=5-12:00:00
-#SBATCH --gres=gpu:3
+#SBATCH --time=1-00:00:00
+#SBATCH --gres=gpu:2
 #SBATCH --mem=64gb
 #SBATCH --cpus-per-task=16
 #SBATCH -o /cluster/work/andrebw/repos/temporal_garage/results/logs/%x/tfpp_%a_%A.out  # File to which STDOUT will be written
@@ -12,7 +12,7 @@
 #SBATCH --partition=GPUQ
 #SBATCH --mail-user=andreaswinje@hotmail.com
 #SBATCH --mail-type=ALL
-#SBATCH --constraint=(a100|h100|v100|p100)
+#SBATCH --constraint=(a100|h100)
 # #SBATCH --nodelist=idun-01-[01-06],idun-06-[01-07],idun-07-[08-10],idun-08-01
 
 # IMPORTANT: Start this script from within team_code folder, otherwise it will not work
@@ -81,7 +81,7 @@ torchrun --nnodes=1 --nproc_per_node=$NGPUS --max_restarts=0 --rdzv_id=$SLURM_JO
     --detect_boxes 1 \
     --use_controller_input_prediction 1 \
     --use_wp_gru 0 \
-    --continue_epoch 0 \
+    --continue_epoch 1 \
     --lr 3e-4 \
     --setting 13_withheld \
     --root_dir $PROJECT_ROOT/results/data/$DATASET/data \
@@ -93,8 +93,8 @@ torchrun --nnodes=1 --nproc_per_node=$NGPUS --max_restarts=0 --rdzv_id=$SLURM_JO
     --validation \
     --image_architecture regnety_032 \
     --lidar_architecture regnety_032 \
-    --load_file $PROJECT_ROOT/results/training/tfpp_base/model_0030.pth
-    #--load_file $PROJECT_ROOT/results/training/v3/static-LB9s2-XL-gating/model_0019.pth
+    --load_file $PROJECT_ROOT/results/training/v3/static-LB5s1-large-gating-seed32/model_0029.pth
+    #--load_file $PROJECT_ROOT/results/training/tfpp_base/model_0030.pth
     # --load_file $PROJECT_ROOT/results/training/v2/static-LB9s1-notraj/model_0029.pth
     # --load_file $PROJECT_ROOT/results/training/v2/lidar-LB5s1/model_0011.pth
     # --load_file $PROJECT_ROOT/results/training/v1/stg1-lidar-LB5s1/model_0030.pth

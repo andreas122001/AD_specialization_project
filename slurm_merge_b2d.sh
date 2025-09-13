@@ -14,10 +14,12 @@
 #SBATCH --mail-user=andreaswinje@hotmail.com
 #SBATCH --mail-type=BEGIN
 
+if [ "$#" -ne 1 ]; then VERSION=v3; else VERSION=$1; fi; 
+
 cd /cluster/work/andrebw/repos/temporal_garage
-sh merge_b2d.sh
+sh merge_b2d.sh $VERSION
 
 echo 
 sleep 10
-python tools/aggregate_b2d.py
+python tools/aggregate_b2d.py $VERSION
 

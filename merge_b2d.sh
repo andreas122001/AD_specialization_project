@@ -2,9 +2,11 @@ cd /cluster/work/andrebw/repos/temporal_garage/Bench2Drive
 
 clean_carla="/cluster/work/andrebw/repos/temporal_garage/Bench2Drive/tools/clean_carla.sh"
 
+if [ "$#" -ne 1 ]; then VERSION=v3; else VERSION=$1; fi;
+
 
 FOLDERS=(
-    /cluster/work/andrebw/repos/temporal_garage/evaluation/v3/bench2drive/**/*/results/bench2drive_split
+    /cluster/work/andrebw/repos/temporal_garage/evaluation/$VERSION/bench2drive/**/*/results/bench2drive_split
 )
 
 i=0

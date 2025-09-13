@@ -9,7 +9,7 @@
 #SBATCH --error=/cluster/work/andrebw/repos/temporal_garage/evaluation/v3/eval_server_%a_%A.out
 #SBATCH --partition=CPUQ
 
-version="v3"
+version="default"
 
 runs=($(ls results/training/$version))
 
