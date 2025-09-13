@@ -708,11 +708,14 @@ def draw_probability_boxes(img, speed_prob, target_speeds, color=(128, 128, 128)
   colors = [color for _ in range(len(speed_prob))]
   colors[speed_index] = color_selected
   start_x = 0
-  start_y = img.shape[0] - 155 - 150  # 1024-155-150  # start_x and start_y specify position of upper left corner of box
+  # start_y = img.shape[0] - 155 - 150  # 1024-155-150  # start_x and start_y specify position of upper left corner of box
+  start_y = img.shape[0] - 155  # 1024-155-150  # start_x and start_y specify position of upper left corner of box
   width_bar = 20 * 4
   width_space = 10
   cv2.rectangle(img, (start_x, start_y), (1024, start_y + 155), (255, 255, 255), cv2.FILLED)
 
+  cv2.putText(img, 'Target Speed Probabilities', (start_x + 5, start_y + 20), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 1,
+              cv2.LINE_AA)
   for idx, s in enumerate(speed_prob):
     start = start_x + idx * (width_space + width_bar)
     cv2.rectangle(img, (start, start_y + 130), (start + width_bar, start_y + 130 - int(s * 100)), colors[idx],

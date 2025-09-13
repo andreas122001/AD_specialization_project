@@ -1444,6 +1444,40 @@ class LidarCenterNet(nn.Module):
         images_lidar = np.ascontiguousarray(images_lidar, dtype=np.uint8)
         rgb_image = rgb[0].permute(1, 2, 0).detach().cpu().numpy()
 
+        if temporal_attn_weights is not None:
+            # Overlay LiDAR with the spatial attention weights (first 64 tokens)
+            cross_weights = torch.stack([w[0] for w in temporal_attn_weights], axis=1)[0].mean(0).detach().cpu()
+            spatial = cross_weights[:,:64].mean(0)
+            spatial = spatial.reshape(8, 8).unsqueeze(0).unsqueeze(0)
+            
+            # Upsample to size of LiDAR BEV
+            spatial = torch.nn.functional.interpolate(
+                spatial,
+                size=(1024, 1024),
+                mode='nearest',
+            ).squeeze(0).squeeze(0).numpy()
+
+            spatial *= 2.5  # scale for visibility
+            
+            # Blur (for prettyness)
+            spatial = cv2.blur(spatial, (30,30))
+
+            spatial = np.flip(spatial, axis=0)  # hflip to fit BEV image
+            spatial = np.flip(spatial, axis=1)  # vflip to fit BEV image
+            spatial = np.expand_dims(spatial, 0)
+
+            # Overlay color
+            overlay = np.zeros_like(images_lidar, dtype=np.float32)
+            overlay[..., 0] = 44
+            overlay[..., 1] = 160
+            overlay[..., 2] = 44
+            
+            # Blend with alpha
+            alpha = spatial[..., None] * 0.8  # scale for opacity (0.0-0.4)
+            images_lidar = (images_lidar) * (1 - alpha) + overlay * alpha
+            images_lidar = images_lidar[0]
+
+
         def denormalize(trajectory):
             max_xy = np.array([self.config.trajectory_max_x, self.config.trajectory_max_y])
             min_xy = np.array([self.config.trajectory_min_x, self.config.trajectory_min_y])
@@ -1514,30 +1548,30 @@ class LidarCenterNet(nn.Module):
                 images_lidar, pred_speed, self.config.target_speeds
             )
 
-        if gt_speed is not None:
-            gt_speed_float = gt_speed[0].detach().cpu().item()
-            cv2.putText(
-                images_lidar,
-                f"Speed: {gt_speed_float:.2f}",
-                (10, 690),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                1,
-                (0, 0, 0),
-                1,
-                cv2.LINE_AA,
-            )
+        # if gt_speed is not None:
+        #     gt_speed_float = gt_speed[0].detach().cpu().item()
+        #     cv2.putText(
+        #         images_lidar,
+        #         f"Speed: {gt_speed_float:.2f}",
+        #         (10, 690),
+        #         cv2.FONT_HERSHEY_SIMPLEX,
+        #         1,
+        #         (0, 0, 0),
+        #         1,
+        #         cv2.LINE_AA,
+        #     )
 
-        if pred_target_speed_scalar is not None:
-            cv2.putText(
-                images_lidar,
-                f"Pred TS: {pred_target_speed_scalar:.2f}",
-                (10, 660),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                1,
-                (0, 0, 0),
-                1,
-                cv2.LINE_AA,
-            )
+        # if pred_target_speed_scalar is not None:
+        #     cv2.putText(
+        #         images_lidar,
+        #         f"Pred TS: {pred_target_speed_scalar:.2f}",
+        #         (10, 660),
+        #         cv2.FONT_HERSHEY_SIMPLEX,
+        #         1,
+        #         (0, 0, 0),
+        #         1,
+        #         cv2.LINE_AA,
+        #     )
 
         if temporal_attn_weights is not None:
             # Only use the cross weights, not self weights
@@ -1547,13 +1581,14 @@ class LidarCenterNet(nn.Module):
             mins, _ = cross_weights.min(dim=0)
             means = cross_weights.mean(dim=0)
 
-            f = plt.figure(figsize=(2, 9))
-            plt.xlim(0,0.5)
+            f = plt.figure(figsize=(2.6, 9))
+            plt.xlim(0,0.80)
             plt.grid(True)
-            plt.yticks(range(0, 65, 4), labels=[f"{i}" for i in range(1, 66, 4)], fontsize=8)
-            plt.xticks(fontsize=8)
-            plt.grid(True, linestyle=':', linewidth=0.5)
-            plt.axhline(63.5, color='red', linestyle='--', linewidth=0.5) # separate spatial vs ego token
+            # plt.yticks(range(0, 66, 3), labels=[f"{i}" for i in range(1, 67, 4)], fontsize=15)
+            plt.yticks([])
+            plt.xticks(fontsize=15)
+            plt.grid(True, linestyle=':', linewidth=0.8)
+            # plt.axhline(63.5, color='red', linestyle='--', linewidth=0.8) # separate spatial vs ego token
 
             for i, (min_, max_, mean) in enumerate(zip(mins, maxes, means)):
                 x = mean.item()
@@ -1563,20 +1598,28 @@ class LidarCenterNet(nn.Module):
                     y=i,
                     xerr=err,
                     fmt='o',
-                    capsize=3,
-                    label="Spatial" if i == 0 else "Ego" if i==64 else "Void" if i==65 else None,
-                    markersize=4,
+                    capsize=5,
+                    label="Spatial tokens" if i == 0 else "Ego velocity" if i==64 else "Void token" if i==65 else None,
+                    markersize=9,
                     color='tab:green' if i < 64 else 'tab:red' if i==64 else 'tab:purple' if i==65 else 'black',
                     alpha=1.0,
                 )
+                # Put value text under dot
+                if x > 0.1:
+                    plt.text(
+                        x - 0.073,
+                        i - 2.2,
+                        f"{x:.2f}",
+                        fontsize=15,
+                        color='black',
+                    )
 
-            plt.title("Temporal attn.", fontsize=10)
+            plt.title("Attn. to history", fontsize=18)
             plt.legend(
                 loc='lower center',
                 bbox_to_anchor=(0.48, -0.002),  # center above the plot
-                ncol=2,
-                fontsize=9,
-                frameon=True
+                fontsize=15,
+                frameon=False
             )
             plt.tight_layout()
 
@@ -1585,6 +1628,8 @@ class LidarCenterNet(nn.Module):
             images_lidar[-img_plot.shape[0]-1:-1, -img_plot.shape[1]-1:-1, :] = img_plot
             plt.close(f)
 
+        # Only lower part of RGB
+        rgb_image = rgb_image[ rgb_image.shape[0] // 2 :, :, : ]
         all_images = np.concatenate((rgb_image, images_lidar), axis=0)
         all_images = Image.fromarray(all_images.astype(np.uint8))
 
