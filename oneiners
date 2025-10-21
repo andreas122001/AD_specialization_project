@@ -4,3 +4,16 @@ run=static-LB5s4-large-gating; cat evaluation/v3/bench2drive/${run}_e30/${run}_r
 
 # Same as above, but for all runs in a folder
 for f in $(ls evaluation/v3/bench2drive | cut -d"_" -f1); do echo $f, $(run=$f; cat evaluation/v3/bench2drive/${run}_e30/${run}_r*/results/bench2drive_split/* | grep "                    \"score_composed" | cut -d":" -f2 | awk '{s+=$1}END{print "ave:",s/NR}' RS=" "); done
+
+# Anopther way to do the above:
+for f in evaluation/v3/bench2drive/ens*; do echo $f, $(run=${f:26:-4}; cat evaluation/v3/bench2drive/${run}_e30/${run}_r*/results/bench2drive_split/* | grep "                    \"score_composed" | cut -d":" -f2 | awk '{s+=$1}END{print "avg DS:",s/NR}' RS=" "); done
+
+# Video
+module load FFmpeg/6.0-GCCcore-12.3.0
+ffmpeg -framerate 20 -start_number 5 -i evaluation/v3/dummy/static-LB5s1-large-gating-seed32_e30/static-LB5s1-large-gating-seed32_r0/logs/MergerIntoSlowTrafficV2/1398_13_route0_09_13_15_59_59/%04d.png -c:v libx264 -y -pix_fmt yuv420p test.mp4
+
+# Extract name, scenario and route of all evals of a directory:
+for f in evaluation/v3/dummy/*_e30/*_r0/logs/*/*; do model=$(echo $f|cut -d"/" -f4) && scenario=$(echo $f|cut -d"/" -f7) && route=$(echo $f|cut -d"/" -f8|cut -d"_" -f1-2) && echo $model $scenario $route; done
+
+# Create videos from all evals of a directory
+mkdir videos && for f in evaluation/v3/dummy/*_e30/*_r0/logs/*/*; do model=$(echo $f|cut -d"/" -f4|cut -d"_" -f1) && scenario=$(echo $f|cut -d"/" -f7) && route=$(echo $f|cut -d"/" -f8|cut -d"_" -f1-2) && ffmpeg -framerate 20 -start_number 5 -i $f/%04d.png -c:v libx264 -y -pix_fmt yuv420p "videos/${model}_${scenario}_${route}.mp4"; done

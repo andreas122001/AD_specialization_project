@@ -1,10 +1,10 @@
 #!/bin/bash
 #SBATCH --account=share-ie-idi
-#SBATCH --job-name=v3/static-LB5s1-large-gating-seed32
+#SBATCH --job-name=v5/static-LB5s1-large-gating-seed69
 #SBATCH --ntasks=1
 #SBATCH --nodes=1
-#SBATCH --time=1-00:00:00
-#SBATCH --gres=gpu:2
+#SBATCH --time=5-00:00:00
+#SBATCH --gres=gpu:4
 #SBATCH --mem=64gb
 #SBATCH --cpus-per-task=16
 #SBATCH -o /cluster/work/andrebw/repos/temporal_garage/results/logs/%x/tfpp_%a_%A.out  # File to which STDOUT will be written
@@ -45,6 +45,7 @@ if [[ $SLURM_JOB_NAME == *"static"* ]]; then RECURRENT=0; else RECURRENT=1; fi
 if [[ $SLURM_JOB_NAME == *"self"* ]]; then SELF=1; else SELF=0; fi
 if [[ $SLURM_JOB_NAME == *"XL"* ]]; then LAYERS=16; else LAYERS=8; fi
 if [[ $SLURM_JOB_NAME == *"traj"* ]]; then TRAJ=1; else TRAJ=0; fi
+if [[ $SLURM_JOB_NAME == *"egovel"* ]]; then EGO_VELOCITY=1; else EGO_VELOCITY=0; fi
 
 # Architectures:
 # resnet34, regnety_032, video_resnet18, video_swin_tiny
@@ -61,6 +62,7 @@ torchrun --nnodes=1 --nproc_per_node=$NGPUS --max_restarts=0 --rdzv_id=$SLURM_JO
     --use_temporal_fusion 1 \
     --use_recurrent_training $RECURRENT \
     --use_temporal_self_attn $SELF \
+    --use_temporal_ego_velocity $EGO_VELOCITY \
     --use_memory_gating 1 \
     --temporal_fusion_layers $LAYERS \
     --temporal_fusion_heads 4 \
@@ -81,7 +83,7 @@ torchrun --nnodes=1 --nproc_per_node=$NGPUS --max_restarts=0 --rdzv_id=$SLURM_JO
     --detect_boxes 1 \
     --use_controller_input_prediction 1 \
     --use_wp_gru 0 \
-    --continue_epoch 1 \
+    --continue_epoch 0 \
     --lr 3e-4 \
     --setting 13_withheld \
     --root_dir $PROJECT_ROOT/results/data/$DATASET/data \
@@ -93,8 +95,8 @@ torchrun --nnodes=1 --nproc_per_node=$NGPUS --max_restarts=0 --rdzv_id=$SLURM_JO
     --validation \
     --image_architecture regnety_032 \
     --lidar_architecture regnety_032 \
-    --load_file $PROJECT_ROOT/results/training/v3/static-LB5s1-large-gating-seed32/model_0029.pth
-    #--load_file $PROJECT_ROOT/results/training/tfpp_base/model_0030.pth
+    --load_file $PROJECT_ROOT/results/training/tfpp_base/model_0030.pth
+    #--load_file $PROJECT_ROOT/results/training/v3/static-LB5s1-large-seed32/model_0029.pth
     # --load_file $PROJECT_ROOT/results/training/v2/static-LB9s1-notraj/model_0029.pth
     # --load_file $PROJECT_ROOT/results/training/v2/lidar-LB5s1/model_0011.pth
     # --load_file $PROJECT_ROOT/results/training/v1/stg1-lidar-LB5s1/model_0030.pth

@@ -724,6 +724,7 @@ class GlobalConfig:
         self.use_learnable_historic_initialization = True  # Whether to learn initial historic tokens, else use zeros
         self.use_temporal_self_attn = True  # Whether to use self-attention in the temporal fusion module
         self.use_memory_gating = True  # Whether to add a void-token in the historic features (mem gating) or not
+        self.use_temporal_ego_velocity = False  # Whether to add ego-velocity before or after temporal fusion
 
         self.use_trajectory_prediction = False  # Whether to use trajectory prediction as auxiliary task
         self.trajectory_pred_len = 6

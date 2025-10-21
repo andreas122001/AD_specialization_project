@@ -9,14 +9,14 @@
 #SBATCH --error=/cluster/work/andrebw/repos/temporal_garage/evaluation/v3/eval_server_%a_%A.out
 #SBATCH --partition=CPUQ
 
-version="default"
+version="v5"
 
 runs=($(ls results/training/$version))
 
 for f in ${runs[@]}; do
   echo $f
   sleep 1
-  if [ ! -f results/training/$version/$f/model_0030.pth ]; then
+  if ! compgen -G "results/training/$version/$f/model*0030.pth" >> /dev/null; then
     echo "Training not finished for '$f'." 1>&2
     continue
   fi
@@ -34,5 +34,5 @@ echo "Evaluations finished. Starting B2D aggregation..."
 echo "================================================="
 echo
 
-sbatch slurm_merge_bd2.sh
+sbatch slurm_merge_bd2.sh $version
 

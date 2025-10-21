@@ -124,9 +124,9 @@ def make_jobsub_file(commands, job_number, exp_name, exp_root_name, partition, i
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=2
 #SBATCH --mem=20gb
-#SBATCH --time={'00-00:25:00' if is_bench2drive else '00-01:00:00'}
+#SBATCH --time={'00-01:00:00' if is_bench2drive else '00-01:00:00'}
 #SBATCH --gres=gpu:1
-#SBATCH --constraint=(v100|p100)
+# #SBATCH --constraint=(v100|p100)
 """
 # V100s and P100s seems to be enough
     for cmd in commands:
@@ -178,7 +178,7 @@ def main():
     parser.add_argument(
         "--model_dir",
         type=str,
-        default="/cluster/work/andrebw/repos/temporal_garage/results/training/v3",
+        default="/cluster/work/andrebw/repos/temporal_garage/results/training/v5",
         help="Folder containing all the experiment folders.",
     )
     parser.add_argument(
@@ -262,7 +262,7 @@ def main():
     # route_root = f"leaderboard/data/bench2drive_split"
     # route_root = f"data/selection/"
     route_pattern = "*.xml"
-    failed_is_fine = True  # True means skip failed routes upon resuming (only for resume=1), if False, rerun failed routes also
+    failed_is_fine = False  # True means skip failed routes upon resuming (only for resume=1), if False, rerun failed routes also
     route_files = glob.glob(f"{route_root}/**/{route_pattern}", recursive=True)
 
     carla_world_port_start = 10000
@@ -276,7 +276,7 @@ def main():
     for epoch in epochs:
         # Root folder in which each of the evaluation seeds will be stored
         name_suffix = f"e{int(epoch.split('_')[-1])}"
-        experiment_name_root = f"v3/{benchmark}/{experiment}_{name_suffix}"
+        experiment_name_root = f"v5/{benchmark}/{experiment}_{name_suffix}"
         experiment_result_folders.append(experiment_name_root)
         exp_names = []
         for name in exp_names_tmp:
@@ -295,7 +295,7 @@ def main():
             cmd = f"cp {model_dir}/{checkpoint}/config.json {args.team_code}/checkpoints/{checkpoint_new_name}/"
             print(cmd)
             os.system(cmd)
-            cmd = f"for f in $(ls {model_dir}/{checkpoint}/* | grep -oE 'model_?[A-Z]?_[0-9]{{4}}.pth'); do ln -sf {model_dir}/{checkpoint}/$f {args.team_code}/checkpoints/{checkpoint_new_name}/$f; done"
+            cmd = f"for f in $(ls {model_dir}/{checkpoint}/* | grep -oE 'model_?[A-Z]?_0030.pth'); do ln -sf {model_dir}/{checkpoint}/$f {args.team_code}/checkpoints/{checkpoint_new_name}/$f; done"
             print(cmd)
             os.system(cmd)
 

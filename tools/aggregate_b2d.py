@@ -12,6 +12,7 @@ else:
 
 root = f"/cluster/work/andrebw/repos/temporal_garage/evaluation/{VERSION}/bench2drive"
 names = os.listdir(f"results/training/{VERSION}")
+names = [n for n in names if "static" in n]
 
 os.makedirs(os.path.join(root, "..", "merged_b2d"), exist_ok=True)
 # names = ["static-LB9s1", "static-LB9s2", "LB5s1", "static-LB9s1-notraj", "lidar-LB5s1", "static-LB5s1", "tfpp_default", "static-LB5s1-large", "static-LB5s1-noprune", "static-LB5s1x", "static-LB5s1-notraj", "larger-LB9s2"]

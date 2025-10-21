@@ -587,6 +587,12 @@ def main():
         type=int,
         default=config.use_memory_gating,
         help="whether to use memory gating in the temporal fusion module",
+    )
+    parser.add_argument(
+        "--use_temporal_ego_velocity",
+        type=int,
+        default=config.use_temporal_ego_velocity,
+        help="whether to add ego velocity before or after temporal fusion",
     )    
     parser.add_argument(
         "--use_trajectory_prediction",

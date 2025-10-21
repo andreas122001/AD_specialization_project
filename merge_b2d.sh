@@ -6,7 +6,7 @@ if [ "$#" -ne 1 ]; then VERSION=v3; else VERSION=$1; fi;
 
 
 FOLDERS=(
-    /cluster/work/andrebw/repos/temporal_garage/evaluation/$VERSION/bench2drive/**/*/results/bench2drive_split
+    /cluster/work/andrebw/repos/temporal_garage/evaluation/$VERSION/bench2drive/static*/*/results/bench2drive_split
 )
 
 i=0

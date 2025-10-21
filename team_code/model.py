@@ -633,11 +633,20 @@ class LidarCenterNet(nn.Module):
 
                 ### Temporal fusion (if enabled) ###
                 if self.config.use_temporal_fusion and self.config.seq_len > 1:
+                    if not self.config.use_temporal_ego_velocity:
+                        # Mask out ego velocity, add it back later
+                        ego_velocity_token = fused_features[:,64].unsqueeze(1)  # (BZ, 1, n_dim)
+                        fused_features = fused_features[:,:64]  # (BZ, n_token, n_dim)
+                    
+                    # Temporal fusion
                     spatial_features = fused_features.clone()
-                    fused_features, temporal_attn_weights = self.temporal_fusor(  # expects tensors: (BZ, 65, n_dim)
+                    fused_features, temporal_attn_weights = self.temporal_fusor(  # expects tensors: (BZ, n_token, n_dim)
                         fused_features, historic_features
                     )
                     spatiotemporal_features = fused_features.clone()
+
+                    if not self.config.use_temporal_ego_velocity:
+                        fused_features = torch.cat((fused_features, ego_velocity_token), axis=1)
 
                 if self.config.use_wp_gru:  # Default: False
                     # Using multiple waypoints (not enabled by default)
